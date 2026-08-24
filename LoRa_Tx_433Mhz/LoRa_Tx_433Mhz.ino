@@ -1,6 +1,8 @@
 #include <SPI.h>
 #include <LoRa.h>
 
+//Este si funciona :) 
+
 // LoRa Tx 433MHz
 float accx;
 
@@ -77,5 +79,5 @@ void loop()
 
   packetSeq++;
 
-  delay(1000);
+  delay(500);
 }
