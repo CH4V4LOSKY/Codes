@@ -77,5 +77,5 @@ void loop()
 
   packetSeq++;
 
-  delay(1000);
+  delay(500);
 }
