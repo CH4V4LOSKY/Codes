@@ -1,6 +1,8 @@
 #include <SPI.h>
 #include <LoRa.h>
 
+//Este si funciona :) 
+
 // LoRa Tx 433MHz
 float accx;
 
