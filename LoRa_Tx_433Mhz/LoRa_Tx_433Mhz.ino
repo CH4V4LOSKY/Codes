@@ -20,7 +20,7 @@ uint32_t packetSeq = 0;
 void setup()
 {
 
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   // Configurar SPI
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
