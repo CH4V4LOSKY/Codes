@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Telemetria CPV LoRa</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="telemetry-shell">
+      <header class="topbar">
+        <div class="title-block">
+          <p class="terminal-title">=== SISTEMA DE TELEMETRIA ===</p>
+          <h1>CPV GY-87 / LoRa</h1>
+        </div>
+
+        <div class="status-strip" aria-label="Estado del sistema">
+          <div><span>Dispositivo</span><strong id="deviceName">CPV-GY87</strong></div>
+          <div><span>Estado</span><strong id="connectionState" class="warn">ESPERANDO</strong></div>
+          <div><span>Radio</span><strong id="radioFrequency">433 MHz</strong></div>
+          <div><span>Serial</span><strong id="serialBaud">115200</strong></div>
+          <div><span>Mision</span><strong id="missionTime">00:00:00</strong></div>
+          <div><span>Muestra</span><strong id="sampleCount">0</strong></div>
+        </div>
+
+        <div class="toolbar" aria-label="Controles de conexion">
+          <button id="connectSerial" type="button">Conectar</button>
+          <button id="demoMode" type="button">Demo</button>
+          <button id="clearData" type="button">Limpiar</button>
+          <button id="exportCsv" type="button">CSV</button>
+        </div>
+      </header>
+
+      <section class="dashboard-grid">
+        <section class="sensor-column" aria-label="Datos instantaneos">
+          <div class="sensor-grid">
+            <article class="panel">
+              <h2>=== ORIENTACION (deg) ===</h2>
+              <div class="metric-table">
+                <div class="metric-head"><span>EJE</span><span>ANGULO</span></div>
+                <div><span>Roll (X)</span><strong id="rollValue">0.00</strong></div>
+                <div><span>Pitch (Y)</span><strong id="pitchValue">0.00</strong></div>
+                <div><span>Yaw / Heading</span><strong id="yawValue">0.00</strong></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <h2>=== VELOCIDAD ANGULAR (deg/s) ===</h2>
+              <div class="metric-table">
+                <div class="metric-head"><span>EJE</span><span>TASA</span></div>
+                <div><span>Gyro X</span><strong id="gyroX">0.0</strong></div>
+                <div><span>Gyro Y</span><strong id="gyroY">0.0</strong></div>
+                <div><span>Gyro Z</span><strong id="gyroZ">0.0</strong></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <h2>=== ACELERACION (g) ===</h2>
+              <div class="metric-table">
+                <div class="metric-head"><span>EJE</span><span>ACEL.</span></div>
+                <div><span>Accel X</span><strong id="accX">0.00</strong></div>
+                <div><span>Accel Y</span><strong id="accY">0.00</strong></div>
+                <div><span>Accel Z</span><strong id="accZ">0.00</strong></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <h2>=== RUMBO / ENLACE ===</h2>
+              <div class="metric-table">
+                <div class="metric-head"><span>CANAL</span><span>VALOR</span></div>
+                <div><span>Heading</span><strong id="headingValue">0.0 deg</strong></div>
+                <div><span>RSSI</span><strong id="rssiValue">-- dBm</strong></div>
+                <div><span>SNR</span><strong id="snrValue">-- dB</strong></div>
+              </div>
+            </article>
+          </div>
+
+          <article class="panel env-panel">
+            <h2>=== TEMPERATURA / PRESION ===</h2>
+            <div class="env-grid">
+              <div><span>Temp IMU (C)</span><strong id="imuTemp">0.0</strong></div>
+              <div><span>Temp BARO (C)</span><strong id="baroTemp">0.0</strong></div>
+              <div><span>Presion (hPa)</span><strong id="pressureValue">0.0</strong></div>
+              <div><span>Altitud (m)</span><strong id="altitudeNow">0.0</strong></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="chart-column" aria-label="Graficas">
+          <article class="panel chart-panel">
+            <div class="chart-heading">
+              <span>Altura (m)</span>
+              <h2>=== ALTITUD (m) ===</h2>
+              <span>Tiempo</span>
+            </div>
+            <canvas id="altitudeChart" width="760" height="260" aria-label="Grafica de altitud"></canvas>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="chart-heading">
+              <span>Vel. Vert. (m/s)</span>
+              <h2>=== VELOCIDAD VERTICAL (m/s) ===</h2>
+              <span>Tiempo</span>
+            </div>
+            <canvas id="velocityChart" width="760" height="260" aria-label="Grafica de velocidad vertical"></canvas>
+          </article>
+        </section>
+
+        <section class="bottom-grid">
+          <article class="panel log-panel">
+            <h2>=== REGISTRO SERIAL ===</h2>
+            <ol id="serialLog" class="serial-log" aria-live="polite"></ol>
+          </article>
+
+          <article class="panel command-panel">
+            <h2>=== CONSOLA DE COMANDOS ===</h2>
+            <div class="command-body">
+              <div class="command-help">
+                <p>Comandos hacia CPV:</p>
+                <button type="button" data-command="ARMAR">ARMAR</button>
+                <button type="button" data-command="ACTIVAR">ACTIVAR</button>
+              </div>
+              <div class="command-status">
+                <p><span>&gt;&gt;</span> <strong id="lastCommand">sin comando</strong></p>
+                <p>Paquetes OK: <strong id="packetsOk">0</strong></p>
+                <p>Perdidos: <strong id="packetsLost">0</strong></p>
+                <p>Tasa RX: <strong id="packetRate">0.0 Hz</strong></p>
+              </div>
+            </div>
+            <form id="commandForm" class="command-form">
+              <label for="commandInput">&gt;&gt;</label>
+              <input id="commandInput" name="command" autocomplete="off" placeholder="enviar comando..." maxlength="30">
+              <button type="submit">Enviar</button>
+            </form>
+          </article>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
