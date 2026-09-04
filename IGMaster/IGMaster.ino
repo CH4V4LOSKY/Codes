@@ -28,6 +28,10 @@ const uint32_t REMOTE_IG_ID = 0x9E771026;
 const uint32_t COMMAND_SAFE_TEST = 0x51B7E20C;
 const uint32_t COMMAND_LINK_PING = 0x13579BDF;
 const uint32_t COMMAND_LINK_ACK = 0xACCE5501;
+const uint32_t STATUS_COUNTDOWN_STARTED = 0xC0D15A7A;
+const uint32_t STATUS_SAFE_ACTION_STARTED = 0xE5EC0001;
+const uint32_t STATUS_SAFE_ACTION_DONE = 0xD04E0001;
+const uint32_t STATUS_REMOTE_BUSY = 0xB105EADD;
 
 const unsigned long MIN_SEND_INTERVAL_MS = 5000;
 const unsigned long PING_INTERVAL_MS = 2000;
@@ -48,6 +52,7 @@ void handleSerialLine(const String &line);
 void sendPeriodicPing(unsigned long now);
 uint32_t sendPacket(uint32_t command);
 void receiveLoRa(unsigned long now);
+void printRemoteStatus(uint32_t command, uint32_t sequence);
 void warnIfNoAck(unsigned long now);
 bool elapsed(unsigned long now, unsigned long since, unsigned long intervalMs);
 void discardPacket();
@@ -80,7 +85,7 @@ void setup() {
   LoRa.receive();
 
   Serial.println(F("master IG listo"));
-  Serial.println(F("Escribe 51B7E20C y Enter para enviar una prueba segura"));
+  Serial.println(F("Escribe 51B7E20C y Enter para iniciar cuenta regresiva segura"));
   Serial.println(F("Modo diagnostico: enviando PING LoRa cada 2 s"));
 }
 
@@ -131,7 +136,7 @@ void handleSerialLine(const String &line) {
   uint32_t sequence = sendPacket(COMMAND_SAFE_TEST);
   lastSafeSendAt = now;
 
-  Serial.print(F("Paquete de prueba segura enviado, seq="));
+  Serial.print(F("Comando enviado; esperando confirmacion de cuenta regresiva, seq="));
   Serial.print(sequence);
   Serial.print(F(", comando=0x"));
   Serial.println(COMMAND_SAFE_TEST, HEX);
@@ -193,19 +198,51 @@ void receiveLoRa(unsigned long now) {
 
   if (magic != PACKET_MAGIC ||
       remoteId != REMOTE_IG_ID ||
-      command != COMMAND_LINK_ACK ||
       receivedChecksum != expectedChecksum) {
-    Serial.println(F("Paquete descartado: firma/remoto/comando/checksum invalido"));
+    Serial.println(F("Paquete descartado: firma/remoto/checksum invalido"));
     return;
   }
 
   lastAckAt = now;
-  Serial.print(F("ACK de IGRemote, seq="));
-  Serial.print(sequence);
-  Serial.print(F(", RSSI="));
+  printRemoteStatus(command, sequence);
+  Serial.print(F("RSSI="));
   Serial.print(LoRa.packetRssi());
   Serial.print(F(" dBm, SNR="));
   Serial.println(LoRa.packetSnr());
+}
+
+void printRemoteStatus(uint32_t command, uint32_t sequence) {
+  Serial.print(F("IGRemote seq="));
+  Serial.print(sequence);
+  Serial.print(F(": "));
+
+  if (command == COMMAND_LINK_ACK) {
+    Serial.println(F("ACK de enlace"));
+    return;
+  }
+
+  if (command == STATUS_COUNTDOWN_STARTED) {
+    Serial.println(F("CUENTA REGRESIVA INICIADA"));
+    return;
+  }
+
+  if (command == STATUS_SAFE_ACTION_STARTED) {
+    Serial.println(F("EJECUCION SIMULADA INICIADA"));
+    return;
+  }
+
+  if (command == STATUS_SAFE_ACTION_DONE) {
+    Serial.println(F("EJECUCION SIMULADA TERMINADA"));
+    return;
+  }
+
+  if (command == STATUS_REMOTE_BUSY) {
+    Serial.println(F("OCUPADO/BLOQUEADO: no inicio cuenta regresiva"));
+    return;
+  }
+
+  Serial.print(F("estado desconocido 0x"));
+  Serial.println(command, HEX);
 }
 
 void warnIfNoAck(unsigned long now) {

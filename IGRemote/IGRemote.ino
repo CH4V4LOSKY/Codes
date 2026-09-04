@@ -30,12 +30,18 @@ const uint32_t REMOTE_IG_ID = 0x9E771026;
 const uint32_t COMMAND_SAFE_TEST = 0x51B7E20C;
 const uint32_t COMMAND_LINK_PING = 0x13579BDF;
 const uint32_t COMMAND_LINK_ACK = 0xACCE5501;
+const uint32_t STATUS_COUNTDOWN_STARTED = 0xC0D15A7A;
+const uint32_t STATUS_SAFE_ACTION_STARTED = 0xE5EC0001;
+const uint32_t STATUS_SAFE_ACTION_DONE = 0xD04E0001;
+const uint32_t STATUS_REMOTE_BUSY = 0xB105EADD;
 
 const uint8_t PACKET_SIZE =
     sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint16_t);
 
 // ---------- Tiempos ----------
 const unsigned long START_LOCK_MS = 5000;
+const unsigned long COUNTDOWN_MS = 5000;
+const unsigned long COUNTDOWN_PRINT_INTERVAL_MS = 1000;
 const unsigned long SAFE_TEST_ON_MS = 500;
 const unsigned long COOLDOWN_MS = 5000;
 const unsigned long STATUS_INTERVAL_MS = 3000;
@@ -43,6 +49,7 @@ const unsigned long STATUS_INTERVAL_MS = 3000;
 enum SystemState {
   START_LOCKED,
   READY,
+  COUNTDOWN,
   SIMULATING,
   COOLDOWN
 };
@@ -52,11 +59,16 @@ unsigned long stateStartedAt = 0;
 uint32_t lastSequence = 0;
 bool hasSequence = false;
 unsigned long lastStatusAt = 0;
+unsigned long lastCountdownPrintAt = 0;
+uint32_t activeCommandSequence = 0;
 
 void updateState(unsigned long now);
 void receiveLoRa(unsigned long now);
+void beginCountdown(uint32_t sequence, unsigned long now);
+void printCountdown(unsigned long now);
 void beginSafeSimulation(unsigned long now);
-void sendAck(uint32_t sequence);
+void finishSafeSimulation(unsigned long now);
+void sendStatus(uint32_t sequence, uint32_t statusCommand);
 void setState(SystemState nextState, unsigned long now);
 bool elapsed(unsigned long now, unsigned long since, unsigned long intervalMs);
 void printStatus(unsigned long now);
@@ -94,6 +106,7 @@ void setup() {
   Serial.println(F("IGRemote listo: bloqueo inicial de 5 s"));
   Serial.print(F("Comando hexadecimal de prueba segura: 0x"));
   Serial.println(COMMAND_SAFE_TEST, HEX);
+  Serial.println(F("Al recibir el comando valido inicia cuenta regresiva segura de 5 s"));
   Serial.println(F("Modo diagnostico: esperando PING del master IG"));
 }
 
@@ -112,10 +125,16 @@ void updateState(unsigned long now) {
     Serial.println(F("IGRemote abierto: esperando paquete valido"));
   }
 
+  if (state == COUNTDOWN) {
+    printCountdown(now);
+
+    if (elapsed(now, stateStartedAt, COUNTDOWN_MS)) {
+      beginSafeSimulation(now);
+    }
+  }
+
   if (state == SIMULATING && elapsed(now, stateStartedAt, SAFE_TEST_ON_MS)) {
-    digitalWrite(LED_BUILTIN, LOW);
-    setState(COOLDOWN, now);
-    Serial.println(F("Simulacion terminada; enfriamiento de 5 s"));
+    finishSafeSimulation(now);
   }
 
   if (state == COOLDOWN && elapsed(now, stateStartedAt, COOLDOWN_MS)) {
@@ -170,50 +189,86 @@ void receiveLoRa(unsigned long now) {
 
   if (command == COMMAND_LINK_PING) {
     Serial.println(F("PING recibido; enviando ACK"));
-    sendAck(sequence);
+    sendStatus(sequence, COMMAND_LINK_ACK);
     return;
   }
 
   if (command != COMMAND_SAFE_TEST) {
     Serial.println(F("Paquete descartado: comando desconocido"));
-    sendAck(sequence);
+    sendStatus(sequence, COMMAND_LINK_ACK);
     return;
   }
 
-  sendAck(sequence);
-
   if (state != READY) {
+    sendStatus(sequence, STATUS_REMOTE_BUSY);
     Serial.println(F("Comando valido ignorado: sistema bloqueado/en enfriamiento"));
     return;
   }
 
-  beginSafeSimulation(now);
+  beginCountdown(sequence, now);
+}
+
+void beginCountdown(uint32_t sequence, unsigned long now) {
+  activeCommandSequence = sequence;
+  lastCountdownPrintAt = 0;
+  setState(COUNTDOWN, now);
+
+  Serial.println(F("CUENTA REGRESIVA INICIADA"));
+  sendStatus(sequence, STATUS_COUNTDOWN_STARTED);
+  printCountdown(now);
+}
+
+void printCountdown(unsigned long now) {
+  if (lastCountdownPrintAt != 0 &&
+      !elapsed(now, lastCountdownPrintAt, COUNTDOWN_PRINT_INTERVAL_MS)) {
+    return;
+  }
+
+  lastCountdownPrintAt = now;
+  unsigned long elapsedMs = now - stateStartedAt;
+  unsigned long remainingMs = elapsedMs >= COUNTDOWN_MS ? 0 : COUNTDOWN_MS - elapsedMs;
+  unsigned long remainingSeconds = (remainingMs + 999) / 1000;
+
+  Serial.print(F("Cuenta regresiva segura: "));
+  Serial.print(remainingSeconds);
+  Serial.println(F(" s"));
 }
 
 void beginSafeSimulation(unsigned long now) {
   digitalWrite(LED_BUILTIN, HIGH);
   setState(SIMULATING, now);
-  Serial.println(F("SIMULACION segura activa por 500 ms"));
+  Serial.println(F("SIMULACION segura ejecutandose por 500 ms"));
+  sendStatus(activeCommandSequence, STATUS_SAFE_ACTION_STARTED);
 }
 
-void sendAck(uint32_t sequence) {
+void finishSafeSimulation(unsigned long now) {
+  digitalWrite(LED_BUILTIN, LOW);
+  setState(COOLDOWN, now);
+  Serial.println(F("Simulacion terminada; enfriamiento de 5 s"));
+  sendStatus(activeCommandSequence, STATUS_SAFE_ACTION_DONE);
+  activeCommandSequence = 0;
+}
+
+void sendStatus(uint32_t sequence, uint32_t statusCommand) {
   uint16_t packetChecksum = checksumPacket(
       PACKET_MAGIC,
       REMOTE_IG_ID,
       sequence,
-      COMMAND_LINK_ACK);
+      statusCommand);
 
   LoRa.beginPacket();
   writeU16(PACKET_MAGIC);
   writeU32(REMOTE_IG_ID);
   writeU32(sequence);
-  writeU32(COMMAND_LINK_ACK);
+  writeU32(statusCommand);
   writeU16(packetChecksum);
   LoRa.endPacket();
   LoRa.receive();
 
-  Serial.print(F("ACK enviado, seq="));
-  Serial.println(sequence);
+  Serial.print(F("Estado enviado al master, seq="));
+  Serial.print(sequence);
+  Serial.print(F(", status=0x"));
+  Serial.println(statusCommand, HEX);
 }
 
 void setState(SystemState nextState, unsigned long now) {
@@ -241,6 +296,8 @@ const __FlashStringHelper *stateName(SystemState currentState) {
       return F("BLOQUEO_INICIAL");
     case READY:
       return F("LISTO");
+    case COUNTDOWN:
+      return F("CUENTA_REGRESIVA");
     case SIMULATING:
       return F("SIMULANDO");
     case COOLDOWN:
