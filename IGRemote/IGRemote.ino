@@ -3,7 +3,7 @@
 //
 // Recibe el comando hexadecimal del master, inicia una cuenta
 // regresiva segura y reporta estados al master por LoRa.
-// No energiza ningun relay ni salida de ignicion.
+// Usa un LED externo en D5 para indicar la ejecucion.
 // ============================================================
 
 #include <SPI.h>
@@ -15,9 +15,7 @@
 #define LORA_RST 9
 #define LORA_DIO0 2
 
-#ifndef LED_BUILTIN
-#define LED_BUILTIN 13
-#endif
+#define LED_EXEC_PIN 5
 
 // ---------- Configuracion LoRa ----------
 const long LORA_FREQUENCY = 433000000L;
@@ -76,8 +74,8 @@ uint16_t checksumPacket(uint16_t magic, uint32_t deviceId, uint32_t sequence, ui
 void setup() {
   Serial.begin(9600);
 
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
+  pinMode(LED_EXEC_PIN, OUTPUT);
+  digitalWrite(LED_EXEC_PIN, LOW);
 
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
   if (!LoRa.begin(LORA_FREQUENCY)) {
@@ -201,14 +199,14 @@ void printCountdown(unsigned long now) {
 }
 
 void beginSafeSimulation(unsigned long now) {
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(LED_EXEC_PIN, HIGH);
   setState(SIMULATING, now);
   Serial.println(F("EJECUCION SIMULADA INICIADA"));
   sendStatus(activeCommandSequence, STATUS_SAFE_ACTION_STARTED);
 }
 
 void finishSafeSimulation(unsigned long now) {
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_EXEC_PIN, LOW);
   setState(COOLDOWN, now);
   Serial.println(F("EJECUCION SIMULADA TERMINADA"));
   Serial.println(F("Enfriamiento de 5 s"));
