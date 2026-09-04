@@ -110,7 +110,104 @@ void mostrarTelemetria(String &paquete, int rssi, float snr)
   Serial.printf("LoRa | RSSI: %d dBm | SNR: %.1f dB\n", rssi, snr);
 }
 
-void revisarTelemetriaLoRa()
+// ---------------------------------------------------------------------------
+// Comandos desde el puerto serial -> LoRa hacia la CPV
+// ---------------------------------------------------------------------------
+// El comando se reenvia periodicamente hasta que llegue el ACK de la CPV
+// (o hasta que se cumpla el timeout), en vez de enviarse una unica vez sin
+// garantia de que la CPV lo haya escuchado.
+const unsigned long REENVIO_COMANDO_MS = 200;
+const unsigned long TIMEOUT_COMANDO_MS = 3000;
+
+String serialBuffer = "";
+String comandoPendiente = "";
+int comandoPendienteSeq = -1;
+int comandoSeq = 0;
+bool esperandoAck = false;
+unsigned long inicioEsperaMs = 0;
+unsigned long ultimoEnvioMs = 0;
+
+void transmitirComandoPendiente()
+{
+  String paquete = "CMD:" + String(comandoPendienteSeq) + ":" + comandoPendiente;
+
+  LoRa.beginPacket();
+  LoRa.print(paquete);
+  LoRa.endPacket();
+
+  ultimoEnvioMs = millis();
+
+  Serial.print("Comando enviado a la CPV (seq ");
+  Serial.print(comandoPendienteSeq);
+  Serial.print("): ");
+  Serial.println(comandoPendiente);
+}
+
+void iniciarEnvioComando(const String &comando)
+{
+  if (esperandoAck)
+  {
+    Serial.println("Aviso: se reemplaza el comando pendiente que no habia sido confirmado.");
+  }
+
+  comandoSeq++;
+  comandoPendiente = comando;
+  comandoPendienteSeq = comandoSeq;
+  esperandoAck = true;
+  inicioEsperaMs = millis();
+  ultimoEnvioMs = 0; // fuerza el primer envio inmediato
+
+  transmitirComandoPendiente();
+}
+
+void revisarReintentosComando()
+{
+  if (!esperandoAck)
+  {
+    return;
+  }
+
+  unsigned long ahora = millis();
+
+  if (ahora - inicioEsperaMs > TIMEOUT_COMANDO_MS)
+  {
+    Serial.print("Sin confirmacion (ACK) de la CPV para: ");
+    Serial.println(comandoPendiente);
+    esperandoAck = false;
+    return;
+  }
+
+  if (ahora - ultimoEnvioMs >= REENVIO_COMANDO_MS)
+  {
+    transmitirComandoPendiente();
+  }
+}
+
+void procesarAck(const String &paquete)
+{
+  // Formato esperado: "ACK:<seq>:<comando>"
+  String resto = paquete.substring(4); // quita "ACK:"
+  int sepIdx = resto.indexOf(':');
+  if (sepIdx < 0)
+  {
+    return;
+  }
+
+  int seq = resto.substring(0, sepIdx).toInt();
+  String comando = resto.substring(sepIdx + 1);
+
+  if (esperandoAck && seq == comandoPendienteSeq)
+  {
+    Serial.print("CPV confirmo ejecucion de: ");
+    Serial.print(comando);
+    Serial.print(" (seq ");
+    Serial.print(seq);
+    Serial.println(")");
+    esperandoAck = false;
+  }
+}
+
+void revisarPaquetesLoRa()
 {
   int packetSize = LoRa.parsePacket();
   if (packetSize == 0)
@@ -124,27 +221,16 @@ void revisarTelemetriaLoRa()
     paquete += (char)LoRa.read();
   }
 
+  if (paquete.startsWith("ACK:"))
+  {
+    procesarAck(paquete);
+    return;
+  }
+
   int rssi = LoRa.packetRssi();
   float snr = LoRa.packetSnr();
   emitirTelemetriaParaUi(paquete, rssi, snr);
   mostrarTelemetria(paquete, rssi, snr);
-}
-
-// ---------------------------------------------------------------------------
-// Comandos desde el puerto serial -> LoRa hacia la CPV
-// ---------------------------------------------------------------------------
-String serialBuffer = "";
-
-void enviarComando(const String &comando)
-{
-  String paquete = "CMD:" + comando;
-
-  LoRa.beginPacket();
-  LoRa.print(paquete);
-  LoRa.endPacket();
-
-  Serial.print("Comando enviado a la CPV: ");
-  Serial.println(comando);
 }
 
 void revisarComandosSerial()
@@ -157,7 +243,7 @@ void revisarComandosSerial()
     {
       if (serialBuffer.length() > 0)
       {
-        enviarComando(serialBuffer);
+        iniciarEnvioComando(serialBuffer);
         serialBuffer = "";
       }
     }
@@ -196,5 +282,6 @@ void setup()
 void loop()
 {
   revisarComandosSerial();
-  revisarTelemetriaLoRa();
+  revisarPaquetesLoRa();
+  revisarReintentosComando();
 }

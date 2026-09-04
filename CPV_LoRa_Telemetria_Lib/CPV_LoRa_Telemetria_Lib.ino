@@ -68,6 +68,11 @@ Bmp180Calib bmpCalib;
 
 uint32_t sampleCount = 0;
 
+// Ultimo numero de secuencia de comando ya ejecutado (para no repetir la
+// accion fisica si la Estacion Terrena reenvia el mismo comando por no
+// haber recibido el ACK a tiempo).
+int ultimoSeqProcesado = -1;
+
 // ---------------------------------------------------------------------------
 // LoRa - pines (deben coincidir con la Estacion Terrena)
 // ---------------------------------------------------------------------------
@@ -127,8 +132,8 @@ void mpu6050EnableBypass()
 }
 
 bool mpu6050Read(float &accX, float &accY, float &accZ,
-                  float &gyroX, float &gyroY, float &gyroZ,
-                  float &tempC)
+                 float &gyroX, float &gyroY, float &gyroZ,
+                 float &tempC)
 {
   uint8_t raw[14];
   if (!readRegisters(MPU6050_ADDR, MPU6050_REG_ACCEL_XOUT_H, raw, 14))
@@ -280,13 +285,39 @@ bool bmp180Read(float &temperatureC, float &pressurePa, float &altitudeM)
 // TODO (usuario): logica real para armar el sistema.
 void armarSistema()
 {
+  digitalWrite(25, HIGH);
+  digitalWrite(26, LOW);
+  delay(1000);
+  digitalWrite(25, LOW);
+  digitalWrite(26, LOW);
 }
 
 // TODO (usuario): logica real para activar el sistema (giro del motor).
 void activarSistema()
 {
+
+  digitalWrite(25, LOW);
+  digitalWrite(26, HIGH);
+  delay(1000);
+  digitalWrite(25, LOW);
+  digitalWrite(26, LOW);
 }
 
+// Responde por LoRa confirmando que el comando con ese numero de secuencia
+// fue recibido y ejecutado (o ya lo habia sido antes).
+void enviarAck(int seq, const String &comando)
+{
+  String paquete = "ACK:" + String(seq) + ":" + comando;
+
+  LoRa.beginPacket();
+  LoRa.print(paquete);
+  LoRa.endPacket();
+
+  Serial.print("ACK enviado a la Estacion Terrena: ");
+  Serial.println(paquete);
+}
+
+// Formato esperado: "CMD:<seq>:<comando>", por ejemplo "CMD:3:ARMAR".
 void procesarComandoRecibido(const String &paquete)
 {
   const String prefijo = "CMD:";
@@ -298,22 +329,48 @@ void procesarComandoRecibido(const String &paquete)
     return;
   }
 
-  String comando = paquete.substring(prefijo.length());
+  String resto = paquete.substring(prefijo.length());
+  int sepIdx = resto.indexOf(':');
+  if (sepIdx < 0)
+  {
+    Serial.println("Comando mal formado (falta el numero de secuencia)");
+    return;
+  }
+
+  int seq = resto.substring(0, sepIdx).toInt();
+  String comando = resto.substring(sepIdx + 1);
+
   Serial.print("Comando recibido desde la Estacion Terrena: ");
-  Serial.println(comando);
+  Serial.print(comando);
+  Serial.print(" (seq ");
+  Serial.print(seq);
+  Serial.println(")");
+
+  if (comando != "ARMAR" && comando != "ACTIVAR")
+  {
+    Serial.println("Comando desconocido");
+    return;
+  }
+
+  if (seq == ultimoSeqProcesado)
+  {
+    // Reintento del mismo comando: ya se ejecuto, solo se vuelve a confirmar.
+    Serial.println("Reintento del mismo comando: se reconfirma sin re-ejecutar.");
+    enviarAck(seq, comando);
+    return;
+  }
 
   if (comando == "ARMAR")
   {
     armarSistema();
   }
-  else if (comando == "ACTIVAR")
+  else
   {
     activarSistema();
   }
-  else
-  {
-    Serial.println("Comando desconocido");
-  }
+
+  ultimoSeqProcesado = seq;
+  enviarAck(seq, comando);
 }
 
 void revisarComandosLoRa()
@@ -339,6 +396,12 @@ void revisarComandosLoRa()
 void setup()
 {
   Serial.begin(115200);
+
+  pinMode(25, OUTPUT);
+  pinMode(26, OUTPUT);
+
+  digitalWrite(25, LOW);
+  digitalWrite(26, LOW);
 
   Wire.begin(I2C_SDA, I2C_SCL);
 
@@ -367,6 +430,17 @@ void setup()
   LoRa.setCodingRate4(5);
 
   Serial.println("CPV lista: GY-87 + LoRa (libreria LoRa.h)");
+
+  delay(5000);
+
+  digitalWrite(25, HIGH);
+  digitalWrite(26, LOW);
+  delay(1000);
+  digitalWrite(25, LOW);
+  digitalWrite(26, HIGH);
+  delay(1000);
+  digitalWrite(25, LOW);
+  digitalWrite(26, LOW);
 }
 
 void loop()
@@ -386,8 +460,10 @@ void loop()
     float gaussX = magX * HMC5883L_SCALE;
     float gaussY = magY * HMC5883L_SCALE;
     float headingRad = atan2f(gaussY, gaussX) + DECLINATION_RAD;
-    if (headingRad < 0) headingRad += 2.0f * PI;
-    if (headingRad > 2.0f * PI) headingRad -= 2.0f * PI;
+    if (headingRad < 0)
+      headingRad += 2.0f * PI;
+    if (headingRad > 2.0f * PI)
+      headingRad -= 2.0f * PI;
     headingDeg = headingRad * 180.0f / PI;
   }
 
@@ -398,11 +474,11 @@ void loop()
   // ---- Empaquetar telemetria y enviar por LoRa ----
   char packet[160];
   int packetLen = snprintf(packet, sizeof(packet),
-                            "TLM,%lu,%d,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%d,%.1f,%d,%.1f,%.1f,%.1f",
-                            (unsigned long)sampleCount,
-                            (int)imuOk, accX, accY, accZ, gyroX, gyroY, gyroZ, imuTempC,
-                            (int)magOk, headingDeg,
-                            (int)baroOk, baroTempC, pressurePa / 100.0f, altitudeM);
+                           "TLM,%lu,%d,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%d,%.1f,%d,%.1f,%.1f,%.1f",
+                           (unsigned long)sampleCount,
+                           (int)imuOk, accX, accY, accZ, gyroX, gyroY, gyroZ, imuTempC,
+                           (int)magOk, headingDeg,
+                           (int)baroOk, baroTempC, pressurePa / 100.0f, altitudeM);
 
   if (packetLen > 0)
   {

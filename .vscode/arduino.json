@@ -2,5 +2,5 @@
     "port": "COM4",
     "configuration": "JTAGAdapter=default,PSRAM=disabled,PartitionScheme=default,CPUFreq=240,FlashMode=qio,FlashFreq=80,FlashSize=4M,UploadSpeed=921600,LoopCore=1,EventsCore=1,DebugLevel=none,EraseFlash=none,ZigbeeMode=default",
     "board": "esp32:esp32:esp32",
-    "sketch": "GY87_Telemetria_ESP32\\GY87_Telemetria_ESP32.ino"
+    "sketch": "CPV_LoRa_Telemetria_Lib\\CPV_LoRa_Telemetria_Lib.ino"
 }
