@@ -1,8 +1,8 @@
 // ============================================================
-// IGMaster - transmisor LoRa para prueba segura de banco
+// IGMaster - ESP32, transmisor LoRa para prueba segura
 //
-// Escribe 51B7E20C en el Monitor Serial y presiona Enter para
-// enviar el paquete binario al IGRemote seguro.
+// El usuario escribe Y en el Monitor Serial. Internamente el
+// ESP32 envia el comando hexadecimal al IGRemote.
 // ============================================================
 
 #include <SPI.h>
@@ -25,42 +25,38 @@ const uint8_t LORA_SYNC_WORD = 0x34;
 const uint16_t PACKET_MAGIC = 0xC0DE;
 const uint32_t MASTER_IG_ID = 0xA71C5E2D;
 const uint32_t REMOTE_IG_ID = 0x9E771026;
-const uint32_t COMMAND_SAFE_TEST = 0x51B7E20C;
-const uint32_t COMMAND_LINK_PING = 0x13579BDF;
-const uint32_t COMMAND_LINK_ACK = 0xACCE5501;
+const uint32_t COMMAND_ACTIVATE = 0x51B7E20C;
 const uint32_t STATUS_COUNTDOWN_STARTED = 0xC0D15A7A;
 const uint32_t STATUS_SAFE_ACTION_STARTED = 0xE5EC0001;
 const uint32_t STATUS_SAFE_ACTION_DONE = 0xD04E0001;
 const uint32_t STATUS_REMOTE_BUSY = 0xB105EADD;
 
-const unsigned long MIN_SEND_INTERVAL_MS = 5000;
-const unsigned long PING_INTERVAL_MS = 2000;
-const unsigned long ACK_WARNING_INTERVAL_MS = 5000;
-
 const uint8_t PACKET_SIZE =
     sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint16_t);
 
+const unsigned long MIN_SEND_INTERVAL_MS = 5000;
+const unsigned long CONFIRMATION_TIMEOUT_MS = 3000;
+
 uint32_t packetSequence = 1;
-unsigned long lastSafeSendAt = 0;
-unsigned long lastPingAt = 0;
-unsigned long lastAckAt = 0;
-unsigned long lastAckWarningAt = 0;
+uint32_t pendingSequence = 0;
+unsigned long lastSendAt = 0;
+unsigned long pendingStartedAt = 0;
+bool waitingForCountdownConfirmation = false;
 String serialLine = "";
 
 void readSerialCommand();
 void handleSerialLine(const String &line);
-void sendPeriodicPing(unsigned long now);
-uint32_t sendPacket(uint32_t command);
+uint32_t sendActivationCommand();
 void receiveLoRa(unsigned long now);
 void printRemoteStatus(uint32_t command, uint32_t sequence);
-void warnIfNoAck(unsigned long now);
+void checkConfirmationTimeout(unsigned long now);
 bool elapsed(unsigned long now, unsigned long since, unsigned long intervalMs);
 void discardPacket();
 uint16_t readU16();
 uint32_t readU32();
 void writeU16(uint16_t value);
 void writeU32(uint32_t value);
-uint16_t checksumPacket(uint16_t magic, uint32_t masterId, uint32_t sequence, uint32_t command);
+uint16_t checksumPacket(uint16_t magic, uint32_t deviceId, uint32_t sequence, uint32_t command);
 
 // ============================================================
 void setup() {
@@ -85,8 +81,7 @@ void setup() {
   LoRa.receive();
 
   Serial.println(F("master IG listo"));
-  Serial.println(F("Escribe 51B7E20C y Enter para iniciar cuenta regresiva segura"));
-  Serial.println(F("Modo diagnostico: enviando PING LoRa cada 2 s"));
+  Serial.println(F("Escribe Y y Enter para enviar el comando de activacion"));
 }
 
 // ============================================================
@@ -94,9 +89,8 @@ void loop() {
   unsigned long now = millis();
 
   readSerialCommand();
-  sendPeriodicPing(now);
   receiveLoRa(now);
-  warnIfNoAck(now);
+  checkConfirmationTimeout(now);
 }
 
 void readSerialCommand() {
@@ -115,58 +109,48 @@ void readSerialCommand() {
       return;
     }
 
-    if (serialLine.length() < 16) {
+    if (serialLine.length() < 8) {
       serialLine += c;
     }
   }
 }
 
 void handleSerialLine(const String &line) {
-  if (line != "51B7E20C") {
-    Serial.println(F("Entrada ignorada: usa solo el codigo hexadecimal esperado"));
+  if (line != "Y") {
+    Serial.println(F("Entrada ignorada. Escribe solo Y y Enter."));
     return;
   }
 
   unsigned long now = millis();
-  if (lastSafeSendAt != 0 && (unsigned long)(now - lastSafeSendAt) < MIN_SEND_INTERVAL_MS) {
+  if (lastSendAt != 0 && !elapsed(now, lastSendAt, MIN_SEND_INTERVAL_MS)) {
     Serial.println(F("Envio bloqueado: espera 5 s antes de reenviar"));
     return;
   }
 
-  uint32_t sequence = sendPacket(COMMAND_SAFE_TEST);
-  lastSafeSendAt = now;
+  uint32_t sequence = sendActivationCommand();
+  lastSendAt = now;
+  pendingSequence = sequence;
+  pendingStartedAt = now;
+  waitingForCountdownConfirmation = true;
 
-  Serial.print(F("Comando enviado; esperando confirmacion de cuenta regresiva, seq="));
-  Serial.print(sequence);
-  Serial.print(F(", comando=0x"));
-  Serial.println(COMMAND_SAFE_TEST, HEX);
-}
-
-void sendPeriodicPing(unsigned long now) {
-  if (lastPingAt != 0 && (unsigned long)(now - lastPingAt) < PING_INTERVAL_MS) {
-    return;
-  }
-
-  lastPingAt = now;
-  uint32_t sequence = sendPacket(COMMAND_LINK_PING);
-
-  Serial.print(F("PING enviado, seq="));
+  Serial.print(F("Y recibido. Comando hexadecimal enviado al remoto, seq="));
   Serial.println(sequence);
+  Serial.println(F("Esperando confirmacion: CUENTA REGRESIVA INICIADA"));
 }
 
-uint32_t sendPacket(uint32_t command) {
+uint32_t sendActivationCommand() {
   uint32_t sequence = packetSequence++;
   uint16_t packetChecksum = checksumPacket(
       PACKET_MAGIC,
       MASTER_IG_ID,
       sequence,
-      command);
+      COMMAND_ACTIVATE);
 
   LoRa.beginPacket();
   writeU16(PACKET_MAGIC);
   writeU32(MASTER_IG_ID);
   writeU32(sequence);
-  writeU32(command);
+  writeU32(COMMAND_ACTIVATE);
   writeU16(packetChecksum);
   LoRa.endPacket();
   LoRa.receive();
@@ -180,12 +164,9 @@ void receiveLoRa(unsigned long now) {
     return;
   }
 
-  Serial.print(F("Paquete recibido, bytes="));
-  Serial.println(packetSize);
-
   if (packetSize != PACKET_SIZE) {
     discardPacket();
-    Serial.println(F("Paquete descartado: longitud invalida"));
+    Serial.println(F("Respuesta descartada: longitud invalida"));
     return;
   }
 
@@ -199,11 +180,15 @@ void receiveLoRa(unsigned long now) {
   if (magic != PACKET_MAGIC ||
       remoteId != REMOTE_IG_ID ||
       receivedChecksum != expectedChecksum) {
-    Serial.println(F("Paquete descartado: firma/remoto/checksum invalido"));
+    Serial.println(F("Respuesta descartada: firma/remoto/checksum invalido"));
     return;
   }
 
-  lastAckAt = now;
+  if (sequence == pendingSequence &&
+      command == STATUS_COUNTDOWN_STARTED) {
+    waitingForCountdownConfirmation = false;
+  }
+
   printRemoteStatus(command, sequence);
   Serial.print(F("RSSI="));
   Serial.print(LoRa.packetRssi());
@@ -215,11 +200,6 @@ void printRemoteStatus(uint32_t command, uint32_t sequence) {
   Serial.print(F("IGRemote seq="));
   Serial.print(sequence);
   Serial.print(F(": "));
-
-  if (command == COMMAND_LINK_ACK) {
-    Serial.println(F("ACK de enlace"));
-    return;
-  }
 
   if (command == STATUS_COUNTDOWN_STARTED) {
     Serial.println(F("CUENTA REGRESIVA INICIADA"));
@@ -237,6 +217,7 @@ void printRemoteStatus(uint32_t command, uint32_t sequence) {
   }
 
   if (command == STATUS_REMOTE_BUSY) {
+    waitingForCountdownConfirmation = false;
     Serial.println(F("OCUPADO/BLOQUEADO: no inicio cuenta regresiva"));
     return;
   }
@@ -245,22 +226,17 @@ void printRemoteStatus(uint32_t command, uint32_t sequence) {
   Serial.println(command, HEX);
 }
 
-void warnIfNoAck(unsigned long now) {
-  if (lastPingAt == 0) {
+void checkConfirmationTimeout(unsigned long now) {
+  if (!waitingForCountdownConfirmation) {
     return;
   }
 
-  unsigned long lastLinkAt = lastAckAt == 0 ? lastPingAt : lastAckAt;
-  if (!elapsed(now, lastLinkAt, ACK_WARNING_INTERVAL_MS)) {
+  if (!elapsed(now, pendingStartedAt, CONFIRMATION_TIMEOUT_MS)) {
     return;
   }
 
-  if (!elapsed(now, lastAckWarningAt, ACK_WARNING_INTERVAL_MS)) {
-    return;
-  }
-
-  lastAckWarningAt = now;
-  Serial.println(F("Sin ACK todavia: revisar energia, GND comun, pines SPI y frecuencia 433 MHz"));
+  waitingForCountdownConfirmation = false;
+  Serial.println(F("Sin confirmacion de cuenta regresiva del remoto"));
 }
 
 bool elapsed(unsigned long now, unsigned long since, unsigned long intervalMs) {
@@ -301,11 +277,11 @@ void writeU32(uint32_t value) {
   LoRa.write((uint8_t)((value >> 24) & 0xFF));
 }
 
-uint16_t checksumPacket(uint16_t magic, uint32_t masterId, uint32_t sequence, uint32_t command) {
+uint16_t checksumPacket(uint16_t magic, uint32_t deviceId, uint32_t sequence, uint32_t command) {
   uint32_t mix = 0xA5A5;
   mix ^= magic;
-  mix ^= masterId;
-  mix ^= masterId >> 16;
+  mix ^= deviceId;
+  mix ^= deviceId >> 16;
   mix ^= sequence;
   mix ^= sequence >> 16;
   mix ^= command;
