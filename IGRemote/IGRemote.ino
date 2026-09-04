@@ -16,7 +16,7 @@
 #define LORA_DIO0 2
 
 #ifndef LED_BUILTIN
-#define LED_BUILTIN 13
+#define LED_BUILTIN 4
 #endif
 
 // ---------- Configuracion LoRa ----------
