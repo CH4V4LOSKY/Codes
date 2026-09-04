@@ -28,11 +28,10 @@
             ],
             "intelliSenseMode": "gcc-x64",
             "includePath": [
-                "c:\\Users\\LENOVO\\Documents\\Codes\\CPV_LoRa_Telemetria_Lib",
+                "c:\\Users\\LENOVO\\Documents\\Codes\\IGRemote",
                 "C:\\Users\\LENOVO\\AppData\\Local\\Arduino15\\packages\\esp32\\tools\\esp32-libs\\3.3.11\\qio_qspi\\include",
                 "C:\\Users\\LENOVO\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.11\\cores\\esp32",
                 "C:\\Users\\LENOVO\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.11\\variants\\esp32",
-                "C:\\Users\\LENOVO\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.11\\libraries\\Wire\\src",
                 "C:\\Users\\LENOVO\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.11\\libraries\\SPI\\src",
                 "C:\\Users\\LENOVO\\Documents\\Arduino\\libraries\\LoRa\\src",
                 "C:\\Users\\LENOVO\\AppData\\Local\\Arduino15\\packages\\esp32\\tools\\esp-x32\\2601\\xtensa-esp-elf\\include\\c++\\14.2.0",
