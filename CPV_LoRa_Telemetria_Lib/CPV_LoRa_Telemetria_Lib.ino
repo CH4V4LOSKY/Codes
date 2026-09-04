@@ -86,6 +86,12 @@ int ultimoSeqProcesado = -1;
 #define LORA_FREQUENCY 433E6 // 433 MHz (ajustar si el modulo es de otra banda)
 
 // ---------------------------------------------------------------------------
+// Motor - control de giro (2 pines digitales)
+// ---------------------------------------------------------------------------
+#define MOTOR_PIN_A 25 // D25
+#define MOTOR_PIN_B 26 // D26
+
+// ---------------------------------------------------------------------------
 // Utilidades I2C
 // ---------------------------------------------------------------------------
 void writeRegister(uint8_t deviceAddr, uint8_t reg, uint8_t value)
@@ -132,6 +138,8 @@ void mpu6050EnableBypass()
 }
 
 bool mpu6050Read(float &accX, float &accY, float &accZ,
+                 float &gyroX, float &gyroY, float &gyroZ,
+                 float &tempC)
                  float &gyroX, float &gyroY, float &gyroZ,
                  float &tempC)
 {
@@ -278,6 +286,8 @@ bool bmp180Read(float &temperatureC, float &pressurePa, float &altitudeM)
   return true;
 }
 
+
+
 // ---------------------------------------------------------------------------
 // Comandos desde la Estacion Terrena
 // ---------------------------------------------------------------------------
@@ -405,6 +415,11 @@ void setup()
 
   Wire.begin(I2C_SDA, I2C_SCL);
 
+  pinMode(MOTOR_PIN_A, OUTPUT);
+  pinMode(MOTOR_PIN_B, OUTPUT);
+  digitalWrite(MOTOR_PIN_A, LOW);
+  digitalWrite(MOTOR_PIN_B, LOW);
+
   mpu6050WakeUp();
   mpu6050EnableBypass();
   hmc5883lInit();
@@ -464,6 +479,10 @@ void loop()
       headingRad += 2.0f * PI;
     if (headingRad > 2.0f * PI)
       headingRad -= 2.0f * PI;
+    if (headingRad < 0)
+      headingRad += 2.0f * PI;
+    if (headingRad > 2.0f * PI)
+      headingRad -= 2.0f * PI;
     headingDeg = headingRad * 180.0f / PI;
   }
 
@@ -474,6 +493,11 @@ void loop()
   // ---- Empaquetar telemetria y enviar por LoRa ----
   char packet[160];
   int packetLen = snprintf(packet, sizeof(packet),
+                           "TLM,%lu,%d,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%d,%.1f,%d,%.1f,%.1f,%.1f",
+                           (unsigned long)sampleCount,
+                           (int)imuOk, accX, accY, accZ, gyroX, gyroY, gyroZ, imuTempC,
+                           (int)magOk, headingDeg,
+                           (int)baroOk, baroTempC, pressurePa / 100.0f, altitudeM);
                            "TLM,%lu,%d,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%d,%.1f,%d,%.1f,%.1f,%.1f",
                            (unsigned long)sampleCount,
                            (int)imuOk, accX, accY, accZ, gyroX, gyroY, gyroZ, imuTempC,
@@ -495,6 +519,7 @@ void loop()
   while (millis() - listenStart < 300)
   {
     revisarComandosLoRa();
+    
   }
 
   delay(200);
