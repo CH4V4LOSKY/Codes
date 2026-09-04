@@ -11,11 +11,10 @@
             ],
             "intelliSenseMode": "gcc-x64",
             "includePath": [
-                "c:\\Users\\ssanc\\OneDrive\\CDA\\Rckect_2026\\Codes\\CPV_LoRa_Telemetria_Lib",
+                "c:\\Users\\ssanc\\OneDrive\\CDA\\Rckect_2026\\Codes\\IGMaster",
                 "C:\\Users\\ssanc\\AppData\\Local\\Arduino15\\packages\\esp32\\tools\\esp32-libs\\3.3.7\\qio_qspi\\include",
                 "C:\\Users\\ssanc\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.7\\cores\\esp32",
                 "C:\\Users\\ssanc\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.7\\variants\\esp32",
-                "C:\\Users\\ssanc\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.7\\libraries\\Wire\\src",
                 "C:\\Users\\ssanc\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\3.3.7\\libraries\\SPI\\src",
                 "C:\\Users\\ssanc\\Documents\\Arduino\\libraries\\LoRa\\src",
                 "C:\\Users\\ssanc\\AppData\\Local\\Arduino15\\packages\\esp32\\tools\\esp-x32\\2511\\xtensa-esp-elf\\include\\c++\\14.2.0",
