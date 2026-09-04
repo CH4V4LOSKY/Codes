@@ -11,6 +11,7 @@
 
 // ---------- Pines LoRa para Arduino Nano ----------
 // SPI hardware del Nano: SCK=D13, MISO=D12, MOSI=D11.
+// D13 debe seguir conectado al SCK del modulo LoRa aunque el LED use D5.
 #define LORA_SS 10
 #define LORA_RST 9
 #define LORA_DIO0 2
@@ -77,11 +78,16 @@ void setup() {
   pinMode(LED_EXEC_PIN, OUTPUT);
   digitalWrite(LED_EXEC_PIN, LOW);
 
+  SPI.begin();
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
   if (!LoRa.begin(LORA_FREQUENCY)) {
     Serial.println(F("ERROR: no se detecta el modulo LoRa"));
+    Serial.println(F("Verifica LoRa SCK=D13, MISO=D12, MOSI=D11, NSS=D10, RST=D9, DIO0=D2"));
     while (true) {
-      delay(1000);
+      digitalWrite(LED_EXEC_PIN, HIGH);
+      delay(150);
+      digitalWrite(LED_EXEC_PIN, LOW);
+      delay(850);
     }
   }
 
@@ -94,6 +100,8 @@ void setup() {
 
   stateStartedAt = millis();
   Serial.println(F("IGRemote listo"));
+  Serial.println(F("LoRa Nano: SCK=D13 MISO=D12 MOSI=D11 NSS=D10 RST=D9 DIO0=D2"));
+  Serial.println(F("LED de ejecucion: D5"));
   Serial.println(F("Bloqueo inicial de 5 s"));
 }
 
