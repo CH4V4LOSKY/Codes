@@ -443,8 +443,12 @@ void setup()
   LoRa.setSpreadingFactor(7);
   LoRa.setSignalBandwidth(125E3);
   LoRa.setCodingRate4(5);
+  
+  // Valor base para sincronización (0x12)
+  LoRa.setSyncWord(0x12);  // CANDADO EXTRA: Pareja 1 (CPV y ET)
+  Serial.println("CPV lista: GY-87 + LoRa (libreria LoRa.h) - PAREJA 1");
 
-  Serial.println("CPV lista: GY-87 + LoRa (libreria LoRa.h)");
+//Serial.println("CPV lista: GY-87 + LoRa (libreria LoRa.h)");
 
   delay(5000);
 
