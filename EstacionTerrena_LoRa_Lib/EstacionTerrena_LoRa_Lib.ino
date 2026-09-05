@@ -275,7 +275,11 @@ void setup()
   LoRa.setSignalBandwidth(125E3);
   LoRa.setCodingRate4(5);
 
-  Serial.println("Estacion Terrena lista (libreria LoRa.h).");
+  LoRa.setSyncWord(0x12); // Clave para sincronización "0x12" : Pareja 1 (CPV y ET)
+
+  Serial.println("Estacion Terrena lista (libreria LoRa.h) - PAREJA 1.");
+
+//  Serial.println("Estacion Terrena lista (libreria LoRa.h).");
   Serial.println("Escriba ARMAR o ACTIVAR en el Monitor Serial y presione enter para enviar el comando.");
 }
 
