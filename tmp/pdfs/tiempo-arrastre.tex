@@ -1,0 +1,73 @@
+\newpage
+\section{Tiempo hasta velocidad vertical cero con resistencia del aire}
+Durante el ascenso, la computadora utilizará la velocidad estimada $V_{r,k}$ y la aceleración vertical de trayectoria obtenida del acelerómetro. No se impondrá $a_z=-g$ como valor permanente: la medición permite incorporar el efecto actual del empuje y de las fuerzas aerodinámicas. La estimación requiere lecturas válidas, calibradas y corregidas por orientación.
+
+\subsection{Qué mide el acelerómetro durante el vuelo}
+Un acelerómetro mide fuerza específica, no la aceleración gravitatoria directamente. En caída libre ideal, sin resistencia del aire, su lectura es aproximadamente cero aunque el cohete acelere hacia abajo a $g$. En reposo sobre una superficie, la fuerza de soporte produce una lectura de magnitud cercana a $g$.\footnote{Analog Devices, ficha técnica ADXL366, explicación de detección de caída libre: \href{https://www.analog.com/media/en/technical-documentation/data-sheets/adxl366.pdf}{documentación del fabricante}. Se cita el principio físico, no el modelo de sensor del proyecto.}
+
+Definimos la componente vertical local de fuerza específica como
+\begin{equation}
+ f_{z,N,k}=\mathbf e_z^{\mathsf T}\mathbf R_{NB,k}
+ (\mathbf f_{m,k}-\mathbf b_f),
+ \qquad \boxed{a_{z,k}=f_{z,N,k}-g}.
+\end{equation}
+La lectura se supone corregida en escala y expresada en $\mathrm{m/s^2}$. Si el cohete está inclinado, $f_{z,N}$ combina sus tres ejes: no debe sustituirse por la componente $z$ cruda del sensor. Para la rotación lateral del ejemplo,
+\begin{equation}
+ a_z=-f_x\sin\theta+f_z\cos\theta-g.
+\end{equation}
+En un modelo de traslación referido al centro de masa,
+\begin{equation}
+ f_{z,N}=\frac{F_{T,z}+F_{\mathrm{aero},z}}{m},\qquad
+ a_z=\frac{F_{T,z}+F_{\mathrm{aero},z}}{m}-g.
+\end{equation}
+$F_{T,z}$ es el empuje vertical y $F_{\mathrm{aero},z}$ la resultante aerodinámica vertical. Después del empuje, el sensor sigue registrando el efecto de la aerodinámica. Durante ascenso en aire quieto y con solo arrastre, ese efecto es negativo y $a_z$ es más negativa que $-g$.
+
+\subsection{Cómo expresar el efecto del viento y el arrastre}
+El arrastre depende de la velocidad respecto al aire. Si $\mathbf v_N$ es la velocidad del cohete respecto al suelo y $\mathbf w_N$ la velocidad del viento,
+\begin{equation}
+ \mathbf u=\mathbf v_N-\mathbf w_N,\qquad
+ \mathbf F_D=-\tfrac12\rho C_D A\,\|\mathbf u\|\mathbf u.
+\end{equation}
+Aquí $\rho$ es la densidad del aire, $C_D$ el coeficiente de arrastre y $A$ su área de referencia. Es un modelo de arrastre opuesto al flujo relativo; una fuerza de sustentación o normal al flujo requeriría un término adicional.\footnote{NASA Glenn Research Center: \href{https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/modern-drag-equation/}{Modern Drag Equation}.}
+La componente vertical del modelo es
+\begin{equation}
+ a_z=\frac{F_{T,z}}{m}-g-
+ \frac{\rho C_D A}{2m}\|\mathbf v_N-\mathbf w_N\|(V_z-w_z).
+\end{equation}
+El viento lateral modifica la rapidez relativa y, con ello, el arrastre; el viento vertical también puede cambiar el signo de su componente vertical. La sola estimación $V_r$ no determina el viento ni toda la velocidad relativa.
+
+\newpage
+\subsection{Predicción con la aceleración vertical medida}
+Para actualizar $V_r$ se utilizará la aceleración vertical corregida durante el vuelo. Para predecir el apogeo, además se necesita estar ascendiendo y desacelerando. Sea $\bar a_{z,k}$ una estimación filtrada de esa aceleración, calculada con mediciones recientes; la barra indica suavizado temporal, no conocimiento de la aceleración futura.
+
+Como aproximación local de movimiento rectilíneo uniformemente acelerado (MRUA), se supone que $\bar a_{z,k}$ permanece constante durante la predicción:
+\begin{equation}
+ V_z(t_k+\Delta t)\approx V_{r,k}+\bar a_{z,k}\Delta t.
+\end{equation}
+Al imponer velocidad vertical cero,
+\begin{equation}
+ \boxed{\Delta t_0\approx-\frac{V_{r,k}}{\bar a_{z,k}}},
+ \qquad V_{r,k}>0,\quad \bar a_{z,k}<0.
+\end{equation}
+$\Delta t_0$ es el tiempo restante, mientras que $t_k+\Delta t_0$ es el instante estimado de apogeo. Si la aceleración es positiva, el modelo no predice una detención futura durante el ascenso. Si es cero o muy cercana a cero, no proporciona un tiempo finito fiable. En las lecturas del ejemplo anterior, $a_{z,2}=+2.662\,\mathrm{m/s^2}$, por lo que todavía no corresponde aplicar esta predicción de apogeo.
+
+\subsection{Ejemplo después de terminar el empuje}
+Supongamos ahora un instante distinto, de ascenso sin empuje, con $V_r=8.328\,\mathrm{m/s}$ y una fuerza específica vertical local filtrada de $-2.00\,\mathrm{m/s^2}$. Atribuyendo esta última al arrastre,
+\begin{equation}
+ \bar a_z=-2.00-9.81=-11.81\,\mathrm{m/s^2}.
+\end{equation}
+La estimación local del tiempo restante es
+\begin{equation}
+ \Delta t_0\approx\frac{8.328}{11.81}\approx0.705\,\mathrm{s}.
+\end{equation}
+Si se ignorara el arrastre se obtendría $8.328/9.81\approx0.849\,\mathrm{s}$. La diferencia refleja la desaceleración adicional que sí aparece en la medición. No debemos volver a restar un arrastre calculado a $\bar a_z$: hacerlo contaría dos veces la misma fuerza. El modelo aerodinámico sirve para interpretar o predecir la evolución, no para duplicar una contribución ya medida.
+
+\subsection{Alcance de la estimación}
+El acelerómetro observa el efecto actual del aire, pero no determina cómo cambiará hasta el apogeo. En ascenso puramente vertical, sin viento, sin empuje y con masa y parámetros aerodinámicos constantes, el modelo es
+\begin{equation}
+ \dot V_z=-g-\beta V_z^2,\qquad \beta=\frac{\rho C_D A}{2m}.
+\end{equation}
+Al disminuir la velocidad, disminuye el arrastre: mantener la desaceleración inicial constante tiende a subestimar el tiempo restante en este caso. Por eso $0.705\,\mathrm{s}$ es una extrapolación local, no un tiempo exacto. Se recalculará con cada actualización válida, considerando el retardo del filtrado.
+
+Si el sensor está alejado del centro de masa, su lectura incluye aceleraciones tangenciales y centrípetas por la rotación; deben compensarse o demostrarse despreciables. Las lecturas saturadas o la orientación incierta invalidan la predicción. Finalmente, velocidad vertical cero no implica velocidad lateral cero, y la predicción temporal no sustituye la confirmación medida del apogeo.
+\end{document}

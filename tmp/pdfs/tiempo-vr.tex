@@ -1,0 +1,34 @@
+\newpage
+\section{Estimación del tiempo hasta velocidad vertical cero}
+Una vez obtenida $V_{r,k}$, podemos estimar cuánto tiempo falta para que la velocidad vertical llegue a cero. Durante el ascenso, este instante corresponde al apogeo si después comienza el descenso. Que la velocidad vertical sea cero no significa que la velocidad lateral también lo sea.
+
+Usaremos las ecuaciones del movimiento rectilíneo uniformemente acelerado (MRUA), aplicadas a la componente vertical. Este modelo supone una aceleración vertical constante durante el intervalo que se quiere predecir. El movimiento completo del cohete puede tener componentes laterales.
+
+\subsection{Tiempo restante a partir de la velocidad actual}
+Sea $\Delta t_0$ el tiempo restante desde el instante actual $t_k$, y $a_{\mathrm{pred},k}$ la aceleración vertical que suponemos constante para la predicción. La ecuación de velocidad es
+\begin{equation}
+ V_z(t_k+\Delta t)=V_{r,k}+a_{\mathrm{pred},k}\Delta t.
+\end{equation}
+Al imponer $V_z=0$ y despejar el tiempo,
+\begin{equation}
+ 0=V_{r,k}+a_{\mathrm{pred},k}\Delta t_0,
+ \qquad
+ \boxed{\Delta t_0=-\frac{V_{r,k}}{a_{\mathrm{pred},k}}}.
+\end{equation}
+Durante un ascenso con desaceleración, $V_{r,k}>0$ y $a_{\mathrm{pred},k}<0$, por lo que el tiempo calculado es positivo. El instante estimado de apogeo es $t_{\mathrm{ap}}=t_k+\Delta t_0$; no debe confundirse con el tiempo restante.
+
+Si $a_{\mathrm{pred},k}=0$, el modelo no predice una detención futura para una velocidad inicial positiva. Si $a_{\mathrm{pred},k}>0$, el resultado algebraico es negativo y no representa un apogeo futuro: bajo esa hipótesis el cohete continúa aumentando su velocidad vertical. Una aceleración cercana a cero hace que la predicción sea muy sensible al ruido.
+
+\subsection{Aproximación después de terminar el empuje}
+Si el empuje ya terminó y se desprecia la resistencia del aire, la aceleración vertical es $a_{\mathrm{pred},k}=-g$. Entonces,
+\begin{equation}
+ \boxed{\Delta t_0=\frac{V_{r,k}}{g}}.
+\end{equation}
+Por ejemplo, si en un instante de vuelo sin empuje se estima la misma velocidad del ejemplo anterior, $V_{r,k}=8.328\,\mathrm{m/s}$, se obtiene
+\begin{equation}
+ \Delta t_0=\frac{8.328}{9.81}\approx0.849\,\mathrm{s}.
+\end{equation}
+Este cálculo corresponde a una hipótesis nueva de vuelo sin empuje. En las lecturas del ejemplo anterior, $a_{z,2}=+2.662\,\mathrm{m/s^2}$: el cohete todavía aumenta su velocidad vertical. Mantener esa aceleración positiva no permite predecir un apogeo futuro, y no sería correcto cambiar su signo para obtener un tiempo positivo.
+
+En vuelo real, el arrastre y cualquier empuje residual modifican la aceleración. Como aproximación local puede emplearse una aceleración vertical medida y filtrada, siempre que sea negativa y razonablemente estable; no se garantiza que permanezca constante hasta el apogeo. El tiempo se recalculará con cada nueva estimación válida de velocidad y aceleración. Llegar a una predicción de tiempo cero no sustituye la confirmación del apogeo mediante las mediciones.
+\end{document}
