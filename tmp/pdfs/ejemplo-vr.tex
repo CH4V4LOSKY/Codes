@@ -1,0 +1,83 @@
+\newpage
+\section{Ejemplo: ascenso con inclinación lateral}
+Consideremos dos instantes separados por $\Delta t=0.10\,\mathrm{s}$ durante el ascenso. El cohete realiza una rotación suave y controlada hacia el lateral $+x$ del marco local. La inclinación de su eje longitudinal pasa de $10^\circ$ a $20^\circ$ respecto a la vertical, mediante una rotación alrededor del eje $y$. El carácter controlado de esta maniobra es una hipótesis del ejemplo, no una función de control definida aquí.
+
+Los valores son ilustrativos. Suponemos lecturas sincronizadas y calibradas, orientación conocida por una estimación independiente apoyada en el giróscopo, y un acelerómetro próximo al centro de masa, de modo que se desprecia el efecto de su desplazamiento respecto a ese punto. Las componentes indicadas son fuerza específica en los ejes del sensor, expresada en $\mathrm{m/s^2}$.
+\begin{center}
+\begin{tabular}{c|c|c|c}
+Instante & Presión & Inclinación & Lectura $(f_x,f_y,f_z)$ \\
+\hline
+$t_1$ & $100000\,\mathrm{Pa}$ & $10^\circ$ & $(1.00,\ 0.00,\ 15.00)$ \\
+$t_2=t_1+0.10\,\mathrm{s}$ & $99990.5\,\mathrm{Pa}$ & $20^\circ$ & $(2.00,\ 0.00,\ 14.00)$
+\end{tabular}
+\end{center}
+El movimiento se limita al plano $xz$ para facilitar el cálculo; por eso $f_y=0$. Tomamos $\bar T=293.15\,\mathrm{K}$ y una velocidad previamente estimada $V_r(t_1)=8.00\,\mathrm{m/s}$. Esta condición inicial es necesaria: dos lecturas de aceleración solo proporcionan el cambio de velocidad.
+
+\subsection{Aporte del barómetro}
+Con las dos presiones, la velocidad barométrica resulta
+\begin{equation}
+ V_b=\frac{287(293.15)}{9.81(0.10)}
+ \ln\left(\frac{100000}{99990.5}\right)
+ \approx8.148\,\mathrm{m/s}.
+\end{equation}
+La caída de presión equivale a un incremento de altura aproximado de $0.815\,\mathrm{m}$. Esta velocidad corresponde al promedio del intervalo y es positiva porque el cohete asciende.
+
+\subsection{Proyección de las componentes del acelerómetro}
+Para la rotación lateral definida, la transformación del marco del sensor al marco local es
+\begin{equation}
+ \mathbf R_{NB}(\theta)=
+ \begin{bmatrix}
+ \cos\theta&0&\sin\theta\\
+ 0&1&0\\
+ -\sin\theta&0&\cos\theta
+ \end{bmatrix}.
+\end{equation}
+Por tanto, las aceleraciones de trayectoria lateral y vertical son
+\begin{equation}
+ a_x=f_x\cos\theta+f_z\sin\theta,\qquad
+ a_z=-f_x\sin\theta+f_z\cos\theta-g.
+\end{equation}
+La componente $f_z$ del sensor no es la componente vertical local cuando el cuerpo está inclinado. Además, la inclinación del cuerpo y la dirección de la aceleración no tienen por qué coincidir.
+
+\newpage
+En el primer instante se obtiene
+\begin{align}
+ a_{z,1}&=-1.00\sin10^\circ+15.00\cos10^\circ-9.81
+ \approx4.788\,\mathrm{m/s^2},\\
+ a_{x,1}&=1.00\cos10^\circ+15.00\sin10^\circ
+ \approx3.590\,\mathrm{m/s^2}.
+\end{align}
+En el segundo instante,
+\begin{align}
+ a_{z,2}&=-2.00\sin20^\circ+14.00\cos20^\circ-9.81
+ \approx2.662\,\mathrm{m/s^2},\\
+ a_{x,2}&=2.00\cos20^\circ+14.00\sin20^\circ
+ \approx6.668\,\mathrm{m/s^2}.
+\end{align}
+Los vectores de aceleración en el marco local son, aproximadamente,
+\begin{equation}
+ \mathbf a_{N,1}=\begin{bmatrix}3.590\\0\\4.788\end{bmatrix}\,\mathrm{m/s^2},
+ \qquad
+ \mathbf a_{N,2}=\begin{bmatrix}6.668\\0\\2.662\end{bmatrix}\,\mathrm{m/s^2}.
+\end{equation}
+Existe aceleración lateral, pero solo $a_z$ interviene en la actualización de velocidad vertical. Si se restara directamente $g$ a $f_{z,2}$, se obtendría $4.19\,\mathrm{m/s^2}$ en lugar de $2.662\,\mathrm{m/s^2}$: se estaría ignorando la orientación.
+
+\subsection{Predicción inercial y velocidad combinada}
+Integrando las componentes verticales con la regla del trapecio,
+\begin{equation}
+ V_a(t_2)=8.00+\frac{4.788+2.662}{2}(0.10)
+ \approx8.373\,\mathrm{m/s}.
+\end{equation}
+Para ilustrar la combinación elegimos $\tau=0.40\,\mathrm{s}$, de modo que
+\begin{equation}
+ \alpha=\frac{0.40}{0.40+0.10}=0.80.
+\end{equation}
+Esta elección es didáctica; no representa un ajuste validado. Con los valores calculados antes de redondear,
+\begin{equation}
+ V_r(t_2)=0.80\,V_a(t_2)+0.20\,V_b
+ \approx\boxed{8.328\,\mathrm{m/s}}.
+\end{equation}
+El resultado indica que el cohete sigue ascendiendo a una velocidad vertical estimada de aproximadamente $8.33\,\mathrm{m/s}$, aunque su aceleración también tiene una componente lateral. No es la magnitud de la velocidad total del cohete.
+
+En este cálculo, la predicción inercial corresponde a $t_2$, mientras que el barómetro aporta un promedio entre $t_1$ y $t_2$. La combinación aproxima la velocidad actual bajo la hipótesis de un intervalo corto; esa diferencia temporal introduce error durante las aceleraciones. Los decimales mostrados permiten seguir la aritmética, pero no implican esa precisión física en los sensores.
+\end{document}

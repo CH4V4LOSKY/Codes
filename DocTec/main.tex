@@ -1,0 +1,259 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage[hidelinks]{hyperref}
+\setlength{\parskip}{5pt}
+\setlength{\parindent}{0pt}
+\title{Computadora de vuelo del cohete de agua\\\large Estimación de la velocidad vertical $V_r$}
+\author{}
+\date{}
+\begin{document}
+\maketitle
+\vspace{-1.5em}
+La velocidad vertical indica qué tan rápido cambia la altura del cohete. Tomaremos el sentido ascendente como positivo: una velocidad positiva corresponde al ascenso y una negativa al descenso. En este documento llamaremos \textbf{$V_r$ (velocidad vertical Real)} al resultado de combinar el barómetro y el acelerómetro. El nombre identifica la variable del proyecto; su valor es una estimación de la velocidad física, no una medición exacta.
+
+\section{Velocidad vertical a partir del barómetro}
+El barómetro mide presión atmosférica. Como la presión disminuye con la altura, sus variaciones permiten estimar el desplazamiento vertical. A partir del equilibrio hidrostático y del modelo de aire ideal,
+\begin{equation}
+ \frac{dp}{dh}=-\rho g,\qquad \rho=\frac{p}{R_a T},
+\end{equation}
+se obtiene, suponiendo temperatura media y gravedad aproximadamente constantes,
+\begin{equation}
+ h_b(t)=\frac{R_a\bar T}{g}\ln\left(\frac{p_0}{p(t)}\right).
+\end{equation}
+Aquí $h_b$ es la altura barométrica respecto al punto de lanzamiento, $p_0$ la presión de referencia medida antes de despegar, $p(t)$ la presión actual, $\bar T$ la temperatura media del aire en kelvin y $R_a\approx287\,\mathrm{J/(kg\,K)}$. Se toma $g\approx9.81\,\mathrm{m/s^2}$. Las presiones deben expresarse en las mismas unidades.
+
+La velocidad es la derivada de la altura. Para dos mediciones consecutivas separadas por $\Delta t_k=t_k-t_{k-1}$,
+\begin{equation}
+ V_{b,k}=\frac{h_{b,k}-h_{b,k-1}}{\Delta t_k}
+ =\frac{R_a\bar T}{g\Delta t_k}\ln\left(\frac{p_{k-1}}{p_k}\right).
+\end{equation}
+Si la presión disminuye, $V_{b,k}$ es positiva. Esta diferencia aproxima la velocidad media del intervalo; por sí sola no entrega la velocidad instantánea exacta en $t_k$.
+
+Derivar también amplifica el ruido: si dos alturas tienen errores independientes con desviación estándar $\sigma_h$, entonces
+\begin{equation}
+ \sigma_{V_b}\approx\frac{\sqrt{2}\,\sigma_h}{\Delta t_k}.
+\end{equation}
+Por ello se necesita suavizar las mediciones o estimar la pendiente sobre varias muestras, aceptando cierto retardo. El barómetro debe medir presión estática exterior: las perturbaciones del flujo y la ventilación del alojamiento pueden introducir errores que el promedio no elimina.
+
+\newpage
+\section{Velocidad vertical a partir del acelerómetro}
+El acelerómetro mide fuerza específica: su lectura incluye el efecto de sostener al sensor contra la gravedad. En reposo su magnitud es aproximadamente $g$; en caída libre ideal es aproximadamente cero. Para obtener la aceleración vertical de trayectoria hay que corregir sesgos, orientar la lectura y compensar la gravedad:
+\begin{equation}
+ a_{z,k}=\mathbf e_z^{\mathsf T}\mathbf R_{NB,k}
+ (\mathbf f_{m,k}-\mathbf b_f)-g.
+\end{equation}
+$\mathbf f_m$ es la lectura en $\mathrm{m/s^2}$, previamente corregida en escala; $\mathbf b_f$ es su sesgo; $\mathbf R_{NB}$ transforma del marco del sensor al marco local, y $\mathbf e_z=[0\;0\;1]^{\mathsf T}$ selecciona la vertical ascendente.
+
+Si el eje $z$ del sensor permanece vertical y apunta hacia arriba, la expresión se reduce a $a_z=f_z-b_z-g$. Si el cohete se inclina, se necesita conocer su orientación, por ejemplo mediante el giróscopo. Durante el vuelo dinámico, el acelerómetro por sí solo no permite separar de forma general inclinación y aceleración de traslación.
+
+La integración permite actualizar la velocidad. Usando la aceleración media de dos muestras,
+\begin{equation}
+ V_{a,k}=V_{r,k-1}+\frac{a_{z,k-1}+a_{z,k}}{2}\Delta t_k.
+\end{equation}
+$V_{a,k}$ es la predicción inercial del instante actual, obtenida desde la estimación combinada anterior. Antes del despegue, con el cohete en reposo, se establece $V_{r,0}=0$. La integración responde rápidamente, pero un sesgo residual constante $b_a$ acumula un error $\delta V=b_a t$.
+
+\section{Combinación para obtener $V_r$}
+Se propone comenzar con un filtro complementario: el acelerómetro describe los cambios rápidos y el barómetro corrige gradualmente la deriva de la velocidad integrada. Cuando existe una nueva medición barométrica válida,
+\begin{equation}
+ \boxed{V_{r,k}=\alpha_k V_{a,k}+(1-\alpha_k)V_{b,k}},
+ \qquad \alpha_k=\frac{\tau}{\tau+\Delta t_k}.
+\end{equation}
+La constante $\tau>0$, expresada en segundos, determina la rapidez de la corrección. Un valor grande confía más en la predicción inercial; uno pequeño introduce más corrección barométrica y también más ruido. Su valor se elegirá a partir de mediciones, sin fijarlo todavía.
+
+Estas ecuaciones suponen muestras sincronizadas y retardos pequeños respecto a los cambios del vuelo. Si el barómetro se actualiza más lentamente, se propaga la velocidad con el acelerómetro entre lecturas y se corrige solo al recibir una lectura nueva; el peso de corrección debe corresponder al intervalo entre correcciones. Una muestra barométrica repetida no constituye información nueva.
+
+Así, $V_{r,k}$ representa la mejor estimación disponible de la velocidad vertical en $t_k$ con este método. Su precisión depende de la calibración, la orientación, el ruido y el retardo de los sensores; deberá comprobarse experimentalmente. Combinar ambas fuentes reduce sus limitaciones complementarias, pero no garantiza una velocidad exacta.
+\newpage
+\section{Ejemplo: ascenso con inclinación lateral}
+Consideremos dos instantes separados por $\Delta t=0.10\,\mathrm{s}$ durante el ascenso. El cohete realiza una rotación suave y controlada hacia el lateral $+x$ del marco local. La inclinación de su eje longitudinal pasa de $10^\circ$ a $20^\circ$ respecto a la vertical, mediante una rotación alrededor del eje $y$. El carácter controlado de esta maniobra es una hipótesis del ejemplo, no una función de control definida aquí.
+
+Los valores son ilustrativos. Suponemos lecturas sincronizadas y calibradas, orientación conocida por una estimación independiente apoyada en el giróscopo, y un acelerómetro próximo al centro de masa, de modo que se desprecia el efecto de su desplazamiento respecto a ese punto. Las componentes indicadas son fuerza específica en los ejes del sensor, expresada en $\mathrm{m/s^2}$.
+\begin{center}
+\begin{tabular}{c|c|c|c}
+Instante & Presión & Inclinación & Lectura $(f_x,f_y,f_z)$ \\
+\hline
+$t_1$ & $100000\,\mathrm{Pa}$ & $10^\circ$ & $(1.00,\ 0.00,\ 15.00)$ \\
+$t_2=t_1+0.10\,\mathrm{s}$ & $99990.5\,\mathrm{Pa}$ & $20^\circ$ & $(2.00,\ 0.00,\ 14.00)$
+\end{tabular}
+\end{center}
+El movimiento se limita al plano $xz$ para facilitar el cálculo; por eso $f_y=0$. Tomamos $\bar T=293.15\,\mathrm{K}$ y una velocidad previamente estimada $V_r(t_1)=8.00\,\mathrm{m/s}$. Esta condición inicial es necesaria: dos lecturas de aceleración solo proporcionan el cambio de velocidad.
+
+\subsection{Aporte del barómetro}
+Con las dos presiones, la velocidad barométrica resulta
+\begin{equation}
+ V_b=\frac{287(293.15)}{9.81(0.10)}
+ \ln\left(\frac{100000}{99990.5}\right)
+ \approx8.148\,\mathrm{m/s}.
+\end{equation}
+La caída de presión equivale a un incremento de altura aproximado de $0.815\,\mathrm{m}$. Esta velocidad corresponde al promedio del intervalo y es positiva porque el cohete asciende.
+
+\subsection{Proyección de las componentes del acelerómetro}
+Para la rotación lateral definida, la transformación del marco del sensor al marco local es
+\begin{equation}
+ \mathbf R_{NB}(\theta)=
+ \begin{bmatrix}
+ \cos\theta&0&\sin\theta\\
+ 0&1&0\\
+ -\sin\theta&0&\cos\theta
+ \end{bmatrix}.
+\end{equation}
+Por tanto, las aceleraciones de trayectoria lateral y vertical son
+\begin{equation}
+ a_x=f_x\cos\theta+f_z\sin\theta,\qquad
+ a_z=-f_x\sin\theta+f_z\cos\theta-g.
+\end{equation}
+La componente $f_z$ del sensor no es la componente vertical local cuando el cuerpo está inclinado. Además, la inclinación del cuerpo y la dirección de la aceleración no tienen por qué coincidir.
+
+\newpage
+En el primer instante se obtiene
+\begin{align}
+ a_{z,1}&=-1.00\sin10^\circ+15.00\cos10^\circ-9.81
+ \approx4.788\,\mathrm{m/s^2},\\
+ a_{x,1}&=1.00\cos10^\circ+15.00\sin10^\circ
+ \approx3.590\,\mathrm{m/s^2}.
+\end{align}
+En el segundo instante,
+\begin{align}
+ a_{z,2}&=-2.00\sin20^\circ+14.00\cos20^\circ-9.81
+ \approx2.662\,\mathrm{m/s^2},\\
+ a_{x,2}&=2.00\cos20^\circ+14.00\sin20^\circ
+ \approx6.668\,\mathrm{m/s^2}.
+\end{align}
+Los vectores de aceleración en el marco local son, aproximadamente,
+\begin{equation}
+ \mathbf a_{N,1}=\begin{bmatrix}3.590\\0\\4.788\end{bmatrix}\,\mathrm{m/s^2},
+ \qquad
+ \mathbf a_{N,2}=\begin{bmatrix}6.668\\0\\2.662\end{bmatrix}\,\mathrm{m/s^2}.
+\end{equation}
+Existe aceleración lateral, pero solo $a_z$ interviene en la actualización de velocidad vertical. Si se restara directamente $g$ a $f_{z,2}$, se obtendría $4.19\,\mathrm{m/s^2}$ en lugar de $2.662\,\mathrm{m/s^2}$: se estaría ignorando la orientación.
+
+\subsection{Predicción inercial y velocidad combinada}
+Integrando las componentes verticales con la regla del trapecio,
+\begin{equation}
+ V_a(t_2)=8.00+\frac{4.788+2.662}{2}(0.10)
+ \approx8.373\,\mathrm{m/s}.
+\end{equation}
+Para ilustrar la combinación elegimos $\tau=0.40\,\mathrm{s}$, de modo que
+\begin{equation}
+ \alpha=\frac{0.40}{0.40+0.10}=0.80.
+\end{equation}
+Esta elección es didáctica; no representa un ajuste validado. Con los valores calculados antes de redondear,
+\begin{equation}
+ V_r(t_2)=0.80\,V_a(t_2)+0.20\,V_b
+ \approx\boxed{8.328\,\mathrm{m/s}}.
+\end{equation}
+El resultado indica que el cohete sigue ascendiendo a una velocidad vertical estimada de aproximadamente $8.33\,\mathrm{m/s}$, aunque su aceleración también tiene una componente lateral. No es la magnitud de la velocidad total del cohete.
+
+En este cálculo, la predicción inercial corresponde a $t_2$, mientras que el barómetro aporta un promedio entre $t_1$ y $t_2$. La combinación aproxima la velocidad actual bajo la hipótesis de un intervalo corto; esa diferencia temporal introduce error durante las aceleraciones. Los decimales mostrados permiten seguir la aritmética, pero no implican esa precisión física en los sensores.
+\newpage
+\section{Tiempo hasta velocidad vertical cero con resistencia del aire}
+Durante el ascenso, la computadora utilizará la velocidad estimada $V_{r,k}$ y la aceleración vertical de trayectoria obtenida del acelerómetro. No se impondrá $a_z=-g$ como valor permanente: la medición permite incorporar el efecto actual del empuje y de las fuerzas aerodinámicas. La estimación requiere lecturas válidas, calibradas y corregidas por orientación.
+
+\subsection{Qué mide el acelerómetro durante el vuelo}
+El acelerómetro del MPU6050 mide fuerza específica, no la aceleración gravitatoria directamente. En caída libre ideal, sin resistencia del aire, su lectura es aproximadamente cero aunque el cohete acelere hacia abajo a $g$. En reposo sobre una superficie, la fuerza de soporte produce una lectura de magnitud cercana a $g$.
+
+Definimos la componente vertical local de fuerza específica como
+\begin{equation}
+ f_{z,N,k}=\mathbf e_z^{\mathsf T}\mathbf R_{NB,k}
+ (\mathbf f_{m,k}-\mathbf b_f),
+ \qquad \boxed{a_{z,k}=f_{z,N,k}-g}.
+\end{equation}
+La lectura se supone corregida en escala y expresada en $\mathrm{m/s^2}$. Si el cohete está inclinado, $f_{z,N}$ combina sus tres ejes: no debe sustituirse por la componente $z$ cruda del sensor. Para la rotación lateral del ejemplo,
+\begin{equation}
+ a_z=-f_x\sin\theta+f_z\cos\theta-g.
+\end{equation}
+En un modelo de traslación referido al centro de masa,
+\begin{equation}
+ f_{z,N}=\frac{F_{T,z}+F_{\mathrm{aero},z}}{m},\qquad
+ a_z=\frac{F_{T,z}+F_{\mathrm{aero},z}}{m}-g.
+\end{equation}
+$F_{T,z}$ es el empuje vertical y $F_{\mathrm{aero},z}$ la resultante aerodinámica vertical. Después del empuje, el sensor sigue registrando el efecto de la aerodinámica. Durante ascenso en aire quieto y con solo arrastre, ese efecto es negativo y $a_z$ es más negativa que $-g$.
+
+\subsection{Cómo expresar el efecto del viento y el arrastre}
+El arrastre depende de la velocidad respecto al aire. Si $\mathbf v_N$ es la velocidad del cohete respecto al suelo y $\mathbf w_N$ la velocidad del viento,
+\begin{equation}
+ \mathbf u=\mathbf v_N-\mathbf w_N,\qquad
+ \mathbf F_D=-\tfrac12\rho C_D A\,\|\mathbf u\|\mathbf u.
+\end{equation}
+Aquí $\rho$ es la densidad del aire, $C_D$ el coeficiente de arrastre y $A$ su área de referencia. Es un modelo de arrastre opuesto al flujo relativo; una fuerza de sustentación o normal al flujo requeriría un término adicional.\footnote{NASA Glenn Research Center: \href{https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/modern-drag-equation/}{Modern Drag Equation}.}
+La componente vertical del modelo es
+\begin{equation}
+ a_z=\frac{F_{T,z}}{m}-g-
+ \frac{\rho C_D A}{2m}\|\mathbf v_N-\mathbf w_N\|(V_z-w_z).
+\end{equation}
+El viento lateral modifica la rapidez relativa y, con ello, el arrastre; el viento vertical también puede cambiar el signo de su componente vertical. La sola estimación $V_r$ no determina el viento ni toda la velocidad relativa.
+
+\newpage
+\subsection{Predicción con la aceleración vertical medida}
+Para actualizar $V_r$ se utilizará la aceleración vertical corregida durante el vuelo. Para predecir el apogeo, además se necesita estar ascendiendo y desacelerando. Sea $\bar a_{z,k}$ una estimación filtrada de esa aceleración, calculada con mediciones recientes; la barra indica suavizado temporal, no conocimiento de la aceleración futura.
+
+Como aproximación local de movimiento rectilíneo uniformemente acelerado (MRUA), se supone que $\bar a_{z,k}$ permanece constante durante la predicción:
+\begin{equation}
+ V_z(t_k+\Delta t)\approx V_{r,k}+\bar a_{z,k}\Delta t.
+\end{equation}
+Al imponer velocidad vertical cero,
+\begin{equation}
+ \boxed{\Delta t_0\approx-\frac{V_{r,k}}{\bar a_{z,k}}},
+ \qquad V_{r,k}>0,\quad \bar a_{z,k}<0.
+\end{equation}
+$\Delta t_0$ es el tiempo restante, mientras que $t_k+\Delta t_0$ es el instante estimado de apogeo. Si la aceleración es positiva, el modelo no predice una detención futura durante el ascenso. Si es cero o muy cercana a cero, no proporciona un tiempo finito fiable. En las lecturas del ejemplo anterior, $a_{z,2}=+2.662\,\mathrm{m/s^2}$, por lo que todavía no corresponde aplicar esta predicción de apogeo.
+
+\subsection{Ejemplo después de terminar el empuje}
+Supongamos ahora un instante distinto, de ascenso sin empuje, con $V_r=8.328\,\mathrm{m/s}$. Las lecturas del acelerómetro del MPU6050, calibradas, proyectadas a la vertical local y filtradas, dan $\bar f_{z,N}=-2.00\,\mathrm{m/s^2}$. Este valor proviene del sensor y todavía no tiene restada la gravedad. Al compensarla,
+\begin{equation}
+ \bar a_z=-2.00-9.81=-11.81\,\mathrm{m/s^2}.
+\end{equation}
+La estimación local del tiempo restante es
+\begin{equation}
+ \Delta t_0\approx\frac{8.328}{11.81}\approx0.705\,\mathrm{s}.
+\end{equation}
+Si se ignorara el arrastre se obtendría $8.328/9.81\approx0.849\,\mathrm{s}$. La diferencia refleja la desaceleración adicional que sí aparece en la medición. No debemos volver a restar un arrastre calculado a $\bar a_z$: hacerlo contaría dos veces la misma fuerza. El modelo aerodinámico sirve para interpretar o predecir la evolución, no para duplicar una contribución ya medida.
+
+\subsection{Alcance de la estimación}
+El acelerómetro observa el efecto actual del aire, pero no determina cómo cambiará hasta el apogeo. En ascenso puramente vertical, sin viento, sin empuje y con masa y parámetros aerodinámicos constantes, el modelo es
+\begin{equation}
+ \dot V_z=-g-\beta V_z^2,\qquad \beta=\frac{\rho C_D A}{2m}.
+\end{equation}
+Al disminuir la velocidad, disminuye el arrastre: mantener la desaceleración inicial constante tiende a subestimar el tiempo restante en este caso. Por eso $0.705\,\mathrm{s}$ es una extrapolación local, no un tiempo exacto. Se recalculará con cada actualización válida, considerando el retardo del filtrado.
+
+Si el sensor está alejado del centro de masa, su lectura incluye aceleraciones tangenciales y centrípetas por la rotación; deben compensarse o demostrarse despreciables. Las lecturas saturadas o la orientación incierta invalidan la predicción. Finalmente, velocidad vertical cero no implica velocidad lateral cero, y la predicción temporal no sustituye la confirmación medida del apogeo.
+
+\newpage
+\section{Identificación de las lecturas del MPU6050}
+Para evitar ambigüedades, distinguiremos el dato entregado por el acelerómetro del MPU6050 de la aceleración vertical que calcula la computadora de vuelo. Filtrar significa suavizar el ruido; no significa eliminar la gravedad ni corregir la inclinación.
+
+\subsection{Del dato del sensor a la componente vertical}
+El acelerómetro entrega tres mediciones digitales con signo, que denotamos $q_x,q_y,q_z$, en los ejes del sensor. Son lecturas de 16 bits; su sensibilidad depende del rango seleccionado.\footnote{TDK InvenSense, \href{https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf}{MPU-6000/MPU-6050 Register Map and Descriptions}, sección de mediciones del acelerómetro.}
+Para una sensibilidad $S$ expresada en cuentas por $g$, la conversión es
+\begin{equation}
+ f_{m,i}=\frac{q_i}{S}\,g_0,\qquad i\in\{x,y,z\},
+ \qquad g_0=9.80665\,\mathrm{m/s^2}.
+\end{equation}
+Por ejemplo, para rango $\pm2g$, $S=16384$ cuentas por $g$. Esta escala solo corresponde a ese rango. Si la lectura ya está en $\mathrm{m/s^2}$, no se convierte de nuevo. $g_0$ es la referencia de conversión; $g$ es la gravedad local, aproximada aquí por $9.81\,\mathrm{m/s^2}$.
+
+Después se corrige el sesgo, se transforma a la vertical local y se filtra la señal proyectada:
+\begin{align}
+ f_{z,N,k}&=\mathbf e_z^{\mathsf T}\mathbf R_{NB,k}
+ (\mathbf f_{m,k}-\mathbf b_f),\\
+ \bar f_{z,N,k}&=\mathcal F\{f_{z,N}\}_k,\\
+ \boxed{\bar a_{z,k}}&=\boxed{\bar f_{z,N,k}-g}.
+\end{align}
+$\mathcal F$ representa un filtro de suavizado que conserva el valor constante de la señal. La orientación debe corresponder al instante de cada lectura. $\bar f_{z,N}$ es fuerza específica vertical filtrada, mientras que $\bar a_z$ es aceleración vertical de trayectoria filtrada y compensada por gravedad. Es esta última la que se usa para predecir el tiempo restante.
+
+\subsection{Qué significa el valor del ejemplo}
+En el ejemplo de ascenso sin empuje se supuso
+\begin{equation}
+ \underbrace{\bar f_{z,N}=-2.00\,\mathrm{m/s^2}}_{\text{antes de restar gravedad}}
+ \quad\Longrightarrow\quad
+ \underbrace{\bar a_z=-11.81\,\mathrm{m/s^2}}_{\text{después de restar gravedad}}.
+\end{equation}
+El signo negativo es esencial: la fuerza específica vertical apunta hacia abajo. Ese $-2.00$ es un valor derivado de las lecturas del MPU6050, ya calibradas, proyectadas y filtradas; no es necesariamente la lectura de su eje $z$ ni una aceleración con gravedad ya compensada.
+
+Si, en cambio, el dato disponible fuera $\bar a_z=-2.00\,\mathrm{m/s^2}$ \textbf{después de restar la gravedad}, se usaría directamente: no se volvería a restar $g$. Para $V_r=8.328\,\mathrm{m/s}$, la extrapolación sería $\Delta t_0=8.328/2.00=4.164\,\mathrm{s}$. Sería otro estado físico: no el ascenso sin empuje en aire quieto con solo arrastre del ejemplo anterior.
+
+\end{document}
+
