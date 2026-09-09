@@ -13,7 +13,7 @@
 //   lado de la CPV; aqui solo se transmite el comando.
 // ============================================================================
 
-// Pines LoRa (deben coincidir con la CPV)
+// Pines locales del ESP32 clasico; el Nano usa sus propios pines SPI.
 #define LORA_SCK 18
 #define LORA_MISO 19
 #define LORA_MOSI 23
@@ -134,6 +134,7 @@ void transmitirComandoPendiente()
   LoRa.beginPacket();
   LoRa.print(paquete);
   LoRa.endPacket();
+  LoRa.parsePacket(); // entrar en RX antes de imprimir y esperar el ACK
 
   ultimoEnvioMs = millis();
 
@@ -150,7 +151,7 @@ void iniciarEnvioComando(const String &comando)
     Serial.println("Aviso: se reemplaza el comando pendiente que no habia sido confirmado.");
   }
 
-  comandoSeq++;
+  comandoSeq = (comandoSeq >= 2147483647) ? 1 : comandoSeq + 1;
   comandoPendiente = comando;
   comandoPendienteSeq = comandoSeq;
   esperandoAck = true;
@@ -193,15 +194,16 @@ void procesarAck(const String &paquete)
     return;
   }
 
-  int seq = resto.substring(0, sepIdx).toInt();
+  String secuencia = resto.substring(0, sepIdx);
   String comando = resto.substring(sepIdx + 1);
 
-  if (esperandoAck && seq == comandoPendienteSeq)
+  if (esperandoAck && secuencia == String(comandoPendienteSeq) &&
+      comando == comandoPendiente)
   {
     Serial.print("CPV confirmo ejecucion de: ");
     Serial.print(comando);
     Serial.print(" (seq ");
-    Serial.print(seq);
+    Serial.print(comandoPendienteSeq);
     Serial.println(")");
     esperandoAck = false;
   }
@@ -274,6 +276,10 @@ void setup()
   LoRa.setSpreadingFactor(7);
   LoRa.setSignalBandwidth(125E3);
   LoRa.setCodingRate4(5);
+  LoRa.setSyncWord(0x12);
+  LoRa.setPreambleLength(8);
+  LoRa.disableCrc(); // mismo perfil que code_Fredy y la CPV existente
+  LoRa.disableInvertIQ();
 
   Serial.println("Estacion Terrena lista (libreria LoRa.h).");
   Serial.println("Escriba ARMAR o ACTIVAR en el Monitor Serial y presione enter para enviar el comando.");

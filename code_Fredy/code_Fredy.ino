@@ -1,17 +1,16 @@
 /*
-  code_Fredy: receptor LoRa para un servo posicional en D14 / GPIO14.
-  Bibliotecas Arduino: ESP32Servo y LoRa (Sandeep Mistry).
+  code_Fredy: receptor LoRa para Arduino Nano clasico (ATmega328P).
+  Bibliotecas Arduino: Servo y LoRa (Sandeep Mistry).
   UI -> USB -> EstacionTerrena_LoRa_Lib -> LoRa -> code_Fredy.
   ARMAR = 0 grados; ACTIVAR = 90 grados. Inicio: 0 grados.
 
-  Cableado del receptor ESP32 clasico:
-  Servo: senal GPIO14, alimentacion externa apropiada y GND comun al ESP32.
-  No alimentar el servo desde 3.3 V del ESP32.
-  LoRa: SCK 18, MISO 19, MOSI 23, NSS 5, RESET 27, DIO0 2.
-  IMPORTANTE: mover RESET del LoRa de GPIO14 a GPIO27 en ESTE receptor.
-  La estacion terrena conserva su cableado y su programa actuales.
+  Cableado del receptor Nano:
+  Servo: senal D5, alimentacion externa apropiada y GND comun al Nano.
+  LoRa: SCK D13, MISO D12, MOSI D11, NSS D10, RESET D9, DIO0 D2.
+  RA-02: alimentacion regulada de 3.3 V y adaptacion de nivel de las
+  salidas de 5 V del Nano (SCK, MOSI, NSS, RESET) hacia el modulo.
 
-  Pulsos de 1000 a 2000 us: ajustar segun la ficha del servo para calibrar
+  Pulsos predeterminados de Servo.h: ajustar segun la ficha del servo para calibrar
   los angulos reales. Este programa no mide la posicion fisica del servo.
   Monitor serie: 115200 baudios.
 */
@@ -120,6 +119,7 @@ void procesarComando(const String &paquete) {
   LoRa.print(comando);
 
   LoRa.endPacket();
+  LoRa.parsePacket(); // volver inmediatamente a RX con el mismo modo de sondeo
 }
 
 
@@ -143,6 +143,7 @@ void setup() {
   // INICIALIZAR SERVO
   // ===============================
 
+  servo.write(0); // preparar el pulso inicial antes de habilitar la salida
   servo.attach(SERVO_PIN);
 
   // IMPORTANTE:
@@ -191,6 +192,10 @@ void setup() {
   LoRa.setSignalBandwidth(125E3);
 
   LoRa.setCodingRate4(5);
+  LoRa.setSyncWord(0x12);
+  LoRa.setPreambleLength(8);
+  LoRa.disableCrc(); // conserva compatibilidad con la telemetria CPV existente
+  LoRa.disableInvertIQ();
 
 
   Serial.println("LoRa iniciado correctamente.");
