@@ -17,83 +17,216 @@
 */
 #include <SPI.h>
 #include <LoRa.h>
-#include <ESP32Servo.h>
+#include <Servo.h>
 
-constexpr int SERVO_PIN = 14;
-constexpr int LORA_SCK = 18;
-constexpr int LORA_MISO = 19;
-constexpr int LORA_MOSI = 23;
-constexpr int LORA_NSS = 5;
-constexpr int LORA_RST = 27;
+// ===============================
+// PINES ARDUINO NANO
+// ===============================
+
+// Servo
+constexpr int SERVO_PIN = 5;
+
+// LoRa SX1278 / RA-02
+constexpr int LORA_NSS  = 10;
+constexpr int LORA_RST  = 9;
 constexpr int LORA_DIO0 = 2;
+
+// SPI del Nano:
+// SCK  = D13
+// MISO = D12
+// MOSI = D11
+// NSS  = D10
+
 constexpr long LORA_FREQUENCY = 433000000;
-constexpr int PULSO_MIN_US = 1000;
-constexpr int PULSO_MAX_US = 2000;
+
+// ===============================
+// SERVO
+// ===============================
 
 Servo servo;
 
+
+// ===============================
+// PROCESAR COMANDO LORA
+// ===============================
+
 void procesarComando(const String &paquete) {
-  // Protocolo de la estacion: CMD:<seq>:<comando>.
-  if (!paquete.startsWith("CMD:")) return;
-  int separador = paquete.indexOf(':', 4);
-  if (separador <= 4) return;
-  String secuencia = paquete.substring(4, separador);
-  for (unsigned int i = 0; i < secuencia.length(); ++i) {
-    if (secuencia[i] < '0' || secuencia[i] > '9') return;
-  }
-  String comando = paquete.substring(separador + 1);
-  int angulo;
-  if (comando == "ARMAR") {
-    angulo = 0;
-  } else if (comando == "ACTIVAR") {
-    angulo = 90;
-  } else {
-    Serial.println("Comando desconocido: " + comando);
+
+  // Formato esperado:
+  // CMD:<seq>:<comando>
+  //
+  // Ejemplos:
+  // CMD:1:ARMAR
+  // CMD:2:ACTIVAR
+
+  if (!paquete.startsWith("CMD:")) {
     return;
   }
 
-  // Asignar una posicion absoluta hace inocuos los reintentos de la estacion,
-  // incluso si esta reinicia su contador de secuencia al reconectarse.
+  int separador = paquete.indexOf(':', 4);
+
+  if (separador <= 4) {
+    return;
+  }
+
+  String secuencia = paquete.substring(4, separador);
+
+  // Verificar que la secuencia contenga solamente números
+  for (unsigned int i = 0; i < secuencia.length(); ++i) {
+    if (secuencia[i] < '0' || secuencia[i] > '9') {
+      return;
+    }
+  }
+
+  String comando = paquete.substring(separador + 1);
+
+  int angulo;
+
+  if (comando == "ARMAR") {
+
+    angulo = 0;
+
+  }
+  else if (comando == "ACTIVAR") {
+
+    angulo = 90;
+
+  }
+  else {
+
+    Serial.print("Comando desconocido: ");
+    Serial.println(comando);
+
+    return;
+  }
+
+  // Mover servo
   servo.write(angulo);
+
   Serial.print(comando);
   Serial.print(" -> posicion solicitada: ");
   Serial.println(angulo);
 
-  // Confirma la orden aplicada al PWM, no una medicion de posicion fisica.
+
+  // ===============================
+  // ENVIAR ACK A ESTACION TERRENA
+  // ===============================
+
   LoRa.beginPacket();
+
   LoRa.print("ACK:");
   LoRa.print(secuencia);
   LoRa.print(":");
   LoRa.print(comando);
+
   LoRa.endPacket();
 }
 
+
+// ===============================
+// SETUP
+// ===============================
+
 void setup() {
+
   Serial.begin(115200);
-  servo.setPeriodHertz(50);
-  servo.attach(SERVO_PIN, PULSO_MIN_US, PULSO_MAX_US);
-  if (!servo.attached()) {
-    Serial.println("Error al iniciar servo en GPIO14.");
-    while (true) delay(1000);
-  }
+
+  delay(500);
+
+  Serial.println();
+  Serial.println("==============================");
+  Serial.println("INICIANDO SISTEMA");
+  Serial.println("==============================");
+
+
+  // ===============================
+  // INICIALIZAR SERVO
+  // ===============================
+
+  servo.attach(SERVO_PIN);
+
+  // IMPORTANTE:
+  // Siempre iniciar bloqueado
   servo.write(0);
 
-  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
-  LoRa.setPins(LORA_NSS, LORA_RST, LORA_DIO0);
+  delay(1000);
+
+  Serial.println("Servo iniciado en 0 grados.");
+
+
+  // ===============================
+  // INICIALIZAR LORA
+  // ===============================
+
+  // NSS / CS
+  pinMode(LORA_NSS, OUTPUT);
+  digitalWrite(LORA_NSS, HIGH);
+
+  SPI.begin();
+
+  LoRa.setPins(
+    LORA_NSS,
+    LORA_RST,
+    LORA_DIO0
+  );
+
+
   if (!LoRa.begin(LORA_FREQUENCY)) {
-    Serial.println("Error LoRa: revisar conexiones, incluido RESET en GPIO27.");
-    while (true) delay(1000);
+
+    Serial.println("ERROR: No se pudo iniciar LoRa.");
+    Serial.println("Revisar conexiones.");
+
+    while (true) {
+      delay(1000);
+    }
   }
-  // Mismos parametros que EstacionTerrena_LoRa_Lib.
+
+
+  // ===============================
+  // CONFIGURACION LORA
+  // ===============================
+
   LoRa.setSpreadingFactor(7);
+
   LoRa.setSignalBandwidth(125E3);
+
   LoRa.setCodingRate4(5);
-  Serial.println("code_Fredy listo: ARMAR = 0 grados; ACTIVAR = 90 grados.");
+
+
+  Serial.println("LoRa iniciado correctamente.");
+  Serial.println();
+  Serial.println("Sistema listo.");
+  Serial.println("ARMAR   = Servo 0 grados");
+  Serial.println("ACTIVAR = Servo 90 grados");
+  Serial.println("==============================");
 }
 
+
+// ===============================
+// LOOP
+// ===============================
+
 void loop() {
-  if (LoRa.parsePacket() == 0) return;
-  String paquete;
-  while (LoRa.available()) paquete += (char)LoRa.read();
+
+  int packetSize = LoRa.parsePacket();
+
+  if (packetSize == 0) {
+    return;
+  }
+
+
+  String paquete = "";
+
+  while (LoRa.available()) {
+
+    paquete += (char)LoRa.read();
+
+  }
+
+
+  Serial.print("Paquete recibido: ");
+  Serial.println(paquete);
+
+
   procesarComando(paquete);
 }
