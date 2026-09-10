@@ -1,293 +1,46 @@
+// Estacion ESP32 clasico. Biblioteca: LoRa (Sandeep Mistry).
+// LoRa SCK 18, MISO 19, MOSI 23, NSS 5, RESET 14, DIO0 2.
+// Monitor serial: 115200 baudios, con nueva linea o retorno de carro.
 #include <SPI.h>
 #include <LoRa.h>
 
-// ============================================================================
-// Estacion Terrena - LoRa (con libreria LoRa.h)
-// ----------------------------------------------------------------------------
-// - Recibe la telemetria que envia la Computadora de Vuelo (CPV) por LoRa y
-//   la muestra por el puerto serial.
-// - Cuando el usuario escribe un comando en el Monitor Serial (por ejemplo
-//   ARMAR o ACTIVAR) y presiona enter, este codigo lo envia por LoRa hacia la
-//   CPV para que esta ejecute la accion correspondiente (armar el sistema /
-//   activar el sistema y girar el motor). La logica de esas acciones vive del
-//   lado de la CPV; aqui solo se transmite el comando.
-// ============================================================================
+String comando = "";
 
-// Pines locales del ESP32 clasico; el Nano usa sus propios pines SPI.
-#define LORA_SCK 18
-#define LORA_MISO 19
-#define LORA_MOSI 23
-#define LORA_NSS 5
-#define LORA_RST 14
-#define LORA_DIO0 2
-
-#define LORA_FREQUENCY 433E6 // 433 MHz (ajustar si el modulo es de otra banda)
-
-// ---------------------------------------------------------------------------
-// Telemetria recibida: "TLM,sample,imuOk,accX,accY,accZ,gyroX,gyroY,gyroZ,
-//                        imuTempC,magOk,headingDeg,baroOk,baroTempC,presionHpa,altitudM"
-// ---------------------------------------------------------------------------
-void emitirTelemetriaParaUi(const String &paquete, int rssi, float snr)
-{
-  Serial.print("UI_TLM,");
-  Serial.print(paquete);
-  Serial.print(",");
-  Serial.print(rssi);
-  Serial.print(",");
-  Serial.println(snr, 1);
-}
-
-void mostrarTelemetria(String &paquete, int rssi, float snr)
-{
-  const int CAMPOS_ESPERADOS = 16; // TLM + 15 valores
-  String campos[CAMPOS_ESPERADOS];
-  int inicio = 0;
-  int total = 0;
-
-  for (int i = 0; i <= paquete.length() && total < CAMPOS_ESPERADOS; i++)
-  {
-    if (i == paquete.length() || paquete.charAt(i) == ',')
-    {
-      campos[total++] = paquete.substring(inicio, i);
-      inicio = i + 1;
-    }
-  }
-
-  if (total < CAMPOS_ESPERADOS || campos[0] != "TLM")
-  {
-    Serial.print("LoRa RX (paquete no reconocido): ");
-    Serial.println(paquete);
-    return;
-  }
-
-  unsigned long sample = campos[1].toInt();
-  int imuOk = campos[2].toInt();
-  float accX = campos[3].toFloat();
-  float accY = campos[4].toFloat();
-  float accZ = campos[5].toFloat();
-  float gyroX = campos[6].toFloat();
-  float gyroY = campos[7].toFloat();
-  float gyroZ = campos[8].toFloat();
-  float imuTempC = campos[9].toFloat();
-  int magOk = campos[10].toInt();
-  float headingDeg = campos[11].toFloat();
-  int baroOk = campos[12].toInt();
-  float baroTempC = campos[13].toFloat();
-  float presionHpa = campos[14].toFloat();
-  float altitudM = campos[15].toFloat();
-
-  Serial.printf("#%lu ------------------------------------\n", sample);
-
-  if (imuOk)
-  {
-    Serial.printf("IMU  | Acc[g]: X:%.2f Y:%.2f Z:%.2f | Gyro[dps]: X:%.1f Y:%.1f Z:%.1f | Temp: %.1f C\n",
-                  accX, accY, accZ, gyroX, gyroY, gyroZ, imuTempC);
-  }
-  else
-  {
-    Serial.println("IMU  | Error de lectura (MPU6050)");
-  }
-
-  if (magOk)
-  {
-    Serial.printf("MAG  | Heading: %.1f deg\n", headingDeg);
-  }
-  else
-  {
-    Serial.println("MAG  | Error de lectura (HMC5883L)");
-  }
-
-  if (baroOk)
-  {
-    Serial.printf("BARO | Temp: %.1f C | Presion: %.1f hPa | Altitud: %.1f m\n",
-                  baroTempC, presionHpa, altitudM);
-  }
-  else
-  {
-    Serial.println("BARO | Error de lectura (BMP180)");
-  }
-
-  Serial.printf("LoRa | RSSI: %d dBm | SNR: %.1f dB\n", rssi, snr);
-}
-
-// ---------------------------------------------------------------------------
-// Comandos desde el puerto serial -> LoRa hacia la CPV
-// ---------------------------------------------------------------------------
-// El comando se reenvia periodicamente hasta que llegue el ACK de la CPV
-// (o hasta que se cumpla el timeout), en vez de enviarse una unica vez sin
-// garantia de que la CPV lo haya escuchado.
-const unsigned long REENVIO_COMANDO_MS = 200;
-const unsigned long TIMEOUT_COMANDO_MS = 3000;
-
-String serialBuffer = "";
-String comandoPendiente = "";
-int comandoPendienteSeq = -1;
-int comandoSeq = 0;
-bool esperandoAck = false;
-unsigned long inicioEsperaMs = 0;
-unsigned long ultimoEnvioMs = 0;
-
-void transmitirComandoPendiente()
-{
-  String paquete = "CMD:" + String(comandoPendienteSeq) + ":" + comandoPendiente;
-
-  LoRa.beginPacket();
-  LoRa.print(paquete);
-  LoRa.endPacket();
-  LoRa.parsePacket(); // entrar en RX antes de imprimir y esperar el ACK
-
-  ultimoEnvioMs = millis();
-
-  Serial.print("Comando enviado a la CPV (seq ");
-  Serial.print(comandoPendienteSeq);
-  Serial.print("): ");
-  Serial.println(comandoPendiente);
-}
-
-void iniciarEnvioComando(const String &comando)
-{
-  if (esperandoAck)
-  {
-    Serial.println("Aviso: se reemplaza el comando pendiente que no habia sido confirmado.");
-  }
-
-  comandoSeq = (comandoSeq >= 2147483647) ? 1 : comandoSeq + 1;
-  comandoPendiente = comando;
-  comandoPendienteSeq = comandoSeq;
-  esperandoAck = true;
-  inicioEsperaMs = millis();
-  ultimoEnvioMs = 0; // fuerza el primer envio inmediato
-
-  transmitirComandoPendiente();
-}
-
-void revisarReintentosComando()
-{
-  if (!esperandoAck)
-  {
-    return;
-  }
-
-  unsigned long ahora = millis();
-
-  if (ahora - inicioEsperaMs > TIMEOUT_COMANDO_MS)
-  {
-    Serial.print("Sin confirmacion (ACK) de la CPV para: ");
-    Serial.println(comandoPendiente);
-    esperandoAck = false;
-    return;
-  }
-
-  if (ahora - ultimoEnvioMs >= REENVIO_COMANDO_MS)
-  {
-    transmitirComandoPendiente();
-  }
-}
-
-void procesarAck(const String &paquete)
-{
-  // Formato esperado: "ACK:<seq>:<comando>"
-  String resto = paquete.substring(4); // quita "ACK:"
-  int sepIdx = resto.indexOf(':');
-  if (sepIdx < 0)
-  {
-    return;
-  }
-
-  String secuencia = resto.substring(0, sepIdx);
-  String comando = resto.substring(sepIdx + 1);
-
-  if (esperandoAck && secuencia == String(comandoPendienteSeq) &&
-      comando == comandoPendiente)
-  {
-    Serial.print("CPV confirmo ejecucion de: ");
-    Serial.print(comando);
-    Serial.print(" (seq ");
-    Serial.print(comandoPendienteSeq);
-    Serial.println(")");
-    esperandoAck = false;
-  }
-}
-
-void revisarPaquetesLoRa()
-{
-  int packetSize = LoRa.parsePacket();
-  if (packetSize == 0)
-  {
-    return;
-  }
-
-  String paquete = "";
-  while (LoRa.available())
-  {
-    paquete += (char)LoRa.read();
-  }
-
-  if (paquete.startsWith("ACK:"))
-  {
-    procesarAck(paquete);
-    return;
-  }
-
-  int rssi = LoRa.packetRssi();
-  float snr = LoRa.packetSnr();
-  emitirTelemetriaParaUi(paquete, rssi, snr);
-  mostrarTelemetria(paquete, rssi, snr);
-}
-
-void revisarComandosSerial()
-{
-  while (Serial.available())
-  {
-    char c = Serial.read();
-
-    if (c == '\n' || c == '\r')
-    {
-      if (serialBuffer.length() > 0)
-      {
-        iniciarEnvioComando(serialBuffer);
-        serialBuffer = "";
-      }
-    }
-    else
-    {
-      serialBuffer += c;
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Setup / Loop
-// ---------------------------------------------------------------------------
-void setup()
-{
+void setup() {
   Serial.begin(115200);
-
-  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
-  LoRa.setPins(LORA_NSS, LORA_RST, LORA_DIO0);
-
-  if (!LoRa.begin(LORA_FREQUENCY))
-  {
-    Serial.println("Error: no se detecto el modulo LoRa");
-    while (true)
-      ;
+  SPI.begin(18, 19, 23, 5);
+  LoRa.setPins(5, 14, 2);
+  if (!LoRa.begin(433000000)) {
+    Serial.println("Error al iniciar LoRa");
+    while (true) { delay(1000); }
   }
-
   LoRa.setSpreadingFactor(7);
   LoRa.setSignalBandwidth(125E3);
   LoRa.setCodingRate4(5);
   LoRa.setSyncWord(0x12);
   LoRa.setPreambleLength(8);
-  LoRa.disableCrc(); // mismo perfil que code_Fredy y la CPV existente
+  LoRa.disableCrc();
   LoRa.disableInvertIQ();
-
-  Serial.println("Estacion Terrena lista (libreria LoRa.h).");
-  Serial.println("Escriba ARMAR o ACTIVAR en el Monitor Serial y presione enter para enviar el comando.");
+  Serial.println("Escriba ARMAR o ACTIVAR y presione enter.");
 }
 
-void loop()
-{
-  revisarComandosSerial();
-  revisarPaquetesLoRa();
-  revisarReintentosComando();
+void loop() {
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      comando.trim();
+      comando.toUpperCase();
+      if (comando == "ARMAR" || comando == "ACTIVAR") {
+        LoRa.beginPacket();
+        LoRa.print(comando);
+        LoRa.endPacket();
+        Serial.print("Enviado: ");
+        Serial.println(comando);
+      }
+      comando = "";
+    } else {
+      // Limitar la memoria incluso si no se recibe un fin de linea.
+      if (comando.length() < 32) comando += c;
+    }
+  }
 }
