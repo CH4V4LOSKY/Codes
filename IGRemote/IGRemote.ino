@@ -2,7 +2,7 @@
 // IGRemote - Arduino Nano, receptor LoRa para prueba segura
 //
 // Recibe un paquete LoRa con campos hexadecimales, inicia una
-// cuenta regresiva y enciende un LED externo en D5 por 500 ms.
+// cuenta regresiva con alarma en D4 y enciende un LED en D5 por 1 s.
 // ============================================================
 
 #include <SPI.h>
@@ -16,6 +16,8 @@
 #define LORA_DIO0 2
 
 #define LED_EXEC_PIN 5
+// Buzzer piezoelectrico pasivo: positivo a D4, negativo a GND.
+#define BUZZER_PIN 4
 
 // ---------- Configuracion LoRa ----------
 const long LORA_FREQUENCY = 433000000L;
@@ -51,6 +53,7 @@ enum SystemState {
 SystemState state = START_LOCKED;
 unsigned long stateStartedAt = 0;
 unsigned long lastCountdownPrintAt = 0;
+uint8_t lastBuzzerStep = 0xFF;
 String activeSequence = "";
 
 void updateState(unsigned long now);
@@ -58,6 +61,7 @@ void receiveLoRa(unsigned long now);
 void handlePacket(const String &packet, unsigned long now);
 void beginCountdown(const String &sequence, unsigned long now);
 void printCountdown(unsigned long now);
+void updateCountdownBuzzer(unsigned long now);
 void beginLedPulse(unsigned long now);
 void finishLedPulse(unsigned long now);
 void sendStatus(const String &sequence, const char *statusCode);
@@ -77,6 +81,8 @@ void setup() {
 
   pinMode(LED_EXEC_PIN, OUTPUT);
   digitalWrite(LED_EXEC_PIN, LOW);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
 
   SPI.begin();
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
@@ -102,6 +108,7 @@ void setup() {
   Serial.println(F("IGRemote listo"));
   Serial.println(F("LoRa Nano: SCK=D13 MISO=D12 MOSI=D11 NSS=D10 RST=D9 DIO0=D2"));
   Serial.println(F("LED de ejecucion: D5"));
+  Serial.println(F("Buzzer pasivo de cuenta regresiva: D4"));
   Serial.println(F("Bloqueo inicial de 5 s"));
 }
 
@@ -120,6 +127,7 @@ void updateState(unsigned long now) {
   }
 
   if (state == COUNTDOWN) {
+    updateCountdownBuzzer(now);
     printCountdown(now);
 
     if (elapsed(now, stateStartedAt, COUNTDOWN_MS)) {
@@ -188,7 +196,9 @@ void handlePacket(const String &packet, unsigned long now) {
 void beginCountdown(const String &sequence, unsigned long now) {
   activeSequence = sequence;
   lastCountdownPrintAt = 0;
+  lastBuzzerStep = 0xFF;
   setState(COUNTDOWN, now);
+  updateCountdownBuzzer(now);
 
   Serial.println(F("CUENTA REGRESIVA INICIADA"));
   sendStatus(sequence, STATUS_COUNTDOWN_STARTED);
@@ -212,7 +222,43 @@ void printCountdown(unsigned long now) {
   sendStatus(activeSequence, STATUS_COUNTDOWN_STARTED);
 }
 
+void updateCountdownBuzzer(unsigned long now) {
+  unsigned long elapsedMs = now - stateStartedAt;
+  if (elapsedMs >= COUNTDOWN_MS) {
+    noTone(BUZZER_PIN);
+    return;
+  }
+
+  // Cuatro etapas de pitidos acelerados y una sirena al final.
+  // tone() tiene duracion limitada: no agrega esperas al enlace LoRa.
+  const unsigned int periodsMs[] = {800, 500, 250, 125, 80};
+  uint8_t stage = min(elapsedMs / 1000, 4UL);
+  unsigned int stageMs = elapsedMs % 1000;
+  unsigned int periodMs = periodsMs[stage];
+  uint8_t beat = stageMs / periodMs;
+  uint8_t step = stage * 16 + beat;
+  if (step == lastBuzzerStep) {
+    return;
+  }
+  lastBuzzerStep = step;
+
+  unsigned int phaseMs = stageMs % periodMs;
+  unsigned int soundMs = stage == 4 ? periodMs : periodMs / 2;
+  if (phaseMs >= soundMs) {
+    return;
+  }
+
+  unsigned int frequencyHz = stage == 4
+      ? (beat % 2 == 0 ? 2600 : 3400)
+      : 900 + stage * 500;
+  unsigned long durationMs = min((unsigned long)(soundMs - phaseMs),
+                                 COUNTDOWN_MS - elapsedMs);
+  durationMs = min(durationMs, (unsigned long)(1000 - stageMs));
+  tone(BUZZER_PIN, frequencyHz, durationMs);
+}
+
 void beginLedPulse(unsigned long now) {
+  noTone(BUZZER_PIN);
   digitalWrite(LED_EXEC_PIN, HIGH);
   setState(LED_ON, now);
   Serial.println(F("LED D5 ENCENDIDO"));
