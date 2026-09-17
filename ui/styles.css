@@ -14,6 +14,15 @@
   --shadow: rgba(49, 213, 95, 0.14);
 }
 
+.telemetry-note {
+  border-left: 3px solid var(--amber);
+  padding: 10px 14px;
+  margin: 0;
+  color: var(--amber);
+  line-height: 1.5;
+}
+#commandResult { line-height: 1.5; color: var(--amber); }
+
 * {
   box-sizing: border-box;
 }

@@ -1,0 +1,35 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Arduino: Verificar archivo abierto",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                "${workspaceFolder}/tools/arduino-local/active-sketch.ps1",
+                "-SketchFile", "${file}", "-Action", "verify"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": "$gcc",
+            "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+            "runOptions": { "instanceLimit": 1 }
+        },
+        {
+            "label": "Arduino: Cargar archivo abierto",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                "${workspaceFolder}/tools/arduino-local/active-sketch.ps1",
+                "-SketchFile", "${file}", "-Action", "upload"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": "$gcc",
+            "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+            "runOptions": { "instanceLimit": 1 }
+        }
+    ]
+}
+

@@ -34,7 +34,9 @@ const els = {
   serialLog: document.querySelector("#serialLog"),
   commandForm: document.querySelector("#commandForm"),
   commandInput: document.querySelector("#commandInput"),
-  lastCommand: document.querySelector("#lastCommand")
+  lastCommand: document.querySelector("#lastCommand"),
+  commandResult: document.querySelector("#commandResult"),
+  telemetryNote: document.querySelector("#telemetryNote")
 };
 
 const state = {
@@ -51,7 +53,8 @@ const state = {
   lastSample: null,
   history: [],
   recentTimestamps: [],
-  prettyPacket: null
+  prettyPacket: null,
+  transmissionReported: false
 };
 
 function fixed(value, digits = 1, fallback = "--") {
@@ -272,7 +275,10 @@ function recordPacket(packet) {
   const minTime = normalized.timestamp - 5000;
   state.recentTimestamps = state.recentTimestamps.filter((time) => time >= minTime);
 
-  setConnection(state.connected ? "CONECTADO" : "RECIBIENDO", "ok");
+  setConnection(state.demoTimer ? "DEMO" : state.connected ? "CONECTADO USB" : "RECIBIENDO", "ok");
+  els.telemetryNote.textContent = state.demoTimer
+    ? "DEMO: datos simulados. No representan sensores ni recepción LoRa."
+    : "Telemetría recibida. Los comandos se pueden enviar sin esperar nuevas muestras.";
   renderTelemetry(normalized);
   drawCharts();
 }
@@ -311,6 +317,11 @@ function handleSerialLine(line) {
   if (!trimmed) return;
 
   logLine(trimmed);
+  const sent = trimmed.match(/^Enviado: (ARMAR|ACTIVAR)$/);
+  if (sent && els.lastCommand.textContent === sent[1]) {
+    state.transmissionReported = true;
+    els.commandResult.textContent = `${sent[1]}: la estación informó transmisión LoRa. Recepción y movimiento no confirmados.`;
+  }
   const packet = parseMachineTelemetry(trimmed) || parsePrettyTelemetry(trimmed);
   if (packet) recordPacket(packet);
 }
@@ -334,8 +345,10 @@ async function connectSerial() {
     state.writer = state.port.writable.getWriter();
     state.connected = true;
     stopDemo();
+    resetData();
+    state.serialBuffer = "";
     els.connectSerial.textContent = "Desconectar";
-    setConnection("CONECTADO", "ok");
+    setConnection("CONECTADO USB", "ok");
     logLine("Puerto serial abierto a 115200 baudios.");
     readSerialLoop();
   } catch (error) {
@@ -385,6 +398,7 @@ async function disconnectSerial() {
   state.reader = null;
   state.writer = null;
   state.port = null;
+  state.serialBuffer = "";
   setConnection("DESCONECTADO", "warn");
   logLine("Puerto serial cerrado.");
 }
@@ -418,12 +432,12 @@ function demoPacket() {
   };
 }
 
-function startDemo() {
+async function startDemo() {
   if (state.demoTimer) {
     stopDemo();
     return;
   }
-  if (state.connected) disconnectSerial();
+  if (state.connected) await disconnectSerial();
   resetData();
   state.demoSample = 0;
   state.missionStart = Date.now();
@@ -434,6 +448,7 @@ function startDemo() {
   }, 500);
   els.demoMode.classList.add("active");
   setConnection("DEMO", "ok");
+  els.telemetryNote.textContent = "DEMO: datos simulados. No representan sensores ni recepción LoRa.";
   logLine("Modo demo iniciado.");
 }
 
@@ -444,6 +459,7 @@ function stopDemo() {
   els.demoMode.classList.remove("active");
   if (!state.connected) setConnection("ESPERANDO", "warn");
   logLine("Modo demo detenido.");
+  els.telemetryNote.textContent = "Demo detenida: cualquier dato conservado es simulado. La estación actual no recibe telemetría.";
 }
 
 function resetData() {
@@ -454,23 +470,27 @@ function resetData() {
   state.recentTimestamps = [];
   state.prettyPacket = null;
   state.missionStart = null;
+  state.transmissionReported = false;
+  els.lastCommand.textContent = "sin comando";
+  els.commandResult.textContent = "Sin envío. ARMAR y ACTIVAR no requieren telemetría ni ACK.";
+  els.telemetryNote.textContent = "La estación actual solo transmite comandos: no se espera telemetría ni ACK. Los comandos funcionan aunque las gráficas estén vacías.";
   els.serialLog.replaceChildren();
   renderTelemetry({
-    sample: 0,
-    roll: 0,
-    pitch: 0,
-    yaw: 0,
-    accX: 0,
-    accY: 0,
-    accZ: 0,
-    gyroX: 0,
-    gyroY: 0,
-    gyroZ: 0,
-    headingDeg: 0,
-    imuTempC: 0,
-    baroTempC: 0,
-    pressureHpa: 0,
-    altitudeM: 0,
+    sample: NaN,
+    roll: NaN,
+    pitch: NaN,
+    yaw: NaN,
+    accX: NaN,
+    accY: NaN,
+    accZ: NaN,
+    gyroX: NaN,
+    gyroY: NaN,
+    gyroZ: NaN,
+    headingDeg: NaN,
+    imuTempC: NaN,
+    baroTempC: NaN,
+    pressureHpa: NaN,
+    altitudeM: NaN,
     rssi: NaN,
     snr: NaN
   });
@@ -480,19 +500,28 @@ function resetData() {
 async function sendCommand(command) {
   const clean = command.trim().toUpperCase();
   if (!clean) return;
-
-  els.lastCommand.textContent = clean;
-  logLine(`>> ${clean}`);
-
-  if (!state.writer) {
-    logLine("Comando preparado, pero no hay puerto serial conectado.");
+  if (clean !== "ARMAR" && clean !== "ACTIVAR") {
+    els.commandResult.textContent = "Comando no enviado: utiliza ARMAR o ACTIVAR.";
+    logLine("La estación solo acepta ARMAR y ACTIVAR.");
     return;
   }
-
+  if (!state.connected || !state.writer || state.demoTimer) {
+    els.commandResult.textContent = "Comando no enviado: conecta la estación terrena por USB.";
+    logLine("No hay conexión USB activa para enviar comandos.");
+    return;
+  }
+  els.lastCommand.textContent = clean;
+  state.transmissionReported = false;
+  els.commandResult.textContent = `${clean}: enviando por USB…`;
+  logLine(`>> ${clean}`);
   try {
     await state.writer.write(new TextEncoder().encode(`${clean}\n`));
+    if (!state.transmissionReported && els.lastCommand.textContent === clean) {
+      els.commandResult.textContent = `${clean}: enviado por USB a la estación. Recepción LoRa no confirmada.`;
+    }
     logLine(`Comando enviado por serial: ${clean}`);
   } catch (error) {
+    els.commandResult.textContent = `${clean}: error al enviar por USB.`;
     logLine(`No se pudo enviar comando: ${error.message}`);
   }
 }

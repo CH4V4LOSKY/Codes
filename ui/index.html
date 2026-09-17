@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Telemetria CPV LoRa</title>
+    <title>Comandos y telemetría CPV LoRa</title>
     <link rel="stylesheet" href="styles.css">
     <script src="app.js" defer></script>
   </head>
@@ -11,12 +11,12 @@
     <main class="telemetry-shell">
       <header class="topbar">
         <div class="title-block">
-          <p class="terminal-title">=== SISTEMA DE TELEMETRIA ===</p>
-          <h1>CPV GY-87 / LoRa</h1>
+          <p class="terminal-title">=== ESTACIÓN TERRENA ===</p>
+          <h1>Comandos CPV / LoRa</h1>
         </div>
 
         <div class="status-strip" aria-label="Estado del sistema">
-          <div><span>Dispositivo</span><strong id="deviceName">CPV-GY87</strong></div>
+          <div><span>Dispositivo USB</span><strong id="deviceName">ESTACIÓN</strong></div>
           <div><span>Estado</span><strong id="connectionState" class="warn">ESPERANDO</strong></div>
           <div><span>Radio</span><strong id="radioFrequency">433 MHz</strong></div>
           <div><span>Serial</span><strong id="serialBaud">115200</strong></div>
@@ -32,6 +32,7 @@
         </div>
       </header>
 
+      <p id="telemetryNote" class="telemetry-note" role="status">La estación actual solo transmite comandos. No se espera telemetría ni ACK.</p>
       <section class="dashboard-grid">
         <section class="sensor-column" aria-label="Datos instantaneos">
           <div class="sensor-grid">
@@ -123,6 +124,7 @@
               </div>
               <div class="command-status">
                 <p><span>&gt;&gt;</span> <strong id="lastCommand">sin comando</strong></p>
+                <p id="commandResult" role="status">Sin envío. Conecta la estación terrena por USB.</p>
                 <p>Paquetes OK: <strong id="packetsOk">0</strong></p>
                 <p>Perdidos: <strong id="packetsLost">0</strong></p>
                 <p>Tasa RX: <strong id="packetRate">0.0 Hz</strong></p>

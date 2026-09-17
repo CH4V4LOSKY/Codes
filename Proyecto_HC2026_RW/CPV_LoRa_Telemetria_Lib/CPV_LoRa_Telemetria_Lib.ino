@@ -140,8 +140,6 @@ void mpu6050EnableBypass()
 bool mpu6050Read(float &accX, float &accY, float &accZ,
                  float &gyroX, float &gyroY, float &gyroZ,
                  float &tempC)
-                 float &gyroX, float &gyroY, float &gyroZ,
-                 float &tempC)
 {
   uint8_t raw[14];
   if (!readRegisters(MPU6050_ADDR, MPU6050_REG_ACCEL_XOUT_H, raw, 14))
@@ -493,11 +491,6 @@ void loop()
   // ---- Empaquetar telemetria y enviar por LoRa ----
   char packet[160];
   int packetLen = snprintf(packet, sizeof(packet),
-                           "TLM,%lu,%d,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%d,%.1f,%d,%.1f,%.1f,%.1f",
-                           (unsigned long)sampleCount,
-                           (int)imuOk, accX, accY, accZ, gyroX, gyroY, gyroZ, imuTempC,
-                           (int)magOk, headingDeg,
-                           (int)baroOk, baroTempC, pressurePa / 100.0f, altitudeM);
                            "TLM,%lu,%d,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%d,%.1f,%d,%.1f,%.1f,%.1f",
                            (unsigned long)sampleCount,
                            (int)imuOk, accX, accY, accZ, gyroX, gyroY, gyroZ, imuTempC,
