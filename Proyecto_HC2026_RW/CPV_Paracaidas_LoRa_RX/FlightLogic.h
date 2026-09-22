@@ -5,7 +5,7 @@
 struct FlightLogic
 {
   double tau = .4, accelTau = .1, launchHeight = 3, launchSpeed = 3;
-  double descentSpeed = .5, drop = .5, hold = .15, lead = 2;
+  double descentSpeed = .5, drop = .5, hold = .15, lead = 4;
   double t = -1, p0 = 0, h = 0, vr = 0, vb = 0, va = 0, az = 0, af = 0, eta = -1, peak = 0, since = -1;
   int state = 0;
   bool fired = false, previousForceValid = false;
