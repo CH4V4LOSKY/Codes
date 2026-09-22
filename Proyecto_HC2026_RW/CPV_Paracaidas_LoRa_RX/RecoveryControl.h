@@ -6,7 +6,9 @@ enum class Command
 {
   Unknown,
   Arm,
-  Release
+  Release,
+  Calibrate,
+  Restart
 };
 inline Command decodeCommand(const char *data, unsigned length)
 {
@@ -15,6 +17,10 @@ inline Command decodeCommand(const char *data, unsigned length)
     return Command::Arm;
   if (length == 7 && memcmp(data, "ACTIVAR", 7) == 0)
     return Command::Release;
+  if (length == 8 && memcmp(data, "CALIBRAR", 8) == 0)
+    return Command::Calibrate;
+  if (length == 9 && memcmp(data, "REINICIAR", 9) == 0)
+    return Command::Restart;
   return Command::Unknown;
 }
 

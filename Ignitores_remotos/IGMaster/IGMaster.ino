@@ -66,7 +66,7 @@ bool elapsed(unsigned long now, unsigned long since, unsigned long intervalMs);
 void setup() {
   Serial.begin(9600);
 
-  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);
+  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);4
 
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
   if (!LoRa.begin(LORA_FREQUENCY)) {

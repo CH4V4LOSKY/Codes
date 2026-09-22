@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Comandos y telemetría CPV LoRa</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="sounds.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body>
@@ -12,7 +13,7 @@
       <header class="topbar">
         <div class="title-block">
           <p class="terminal-title">=== ESTACIÓN TERRENA ===</p>
-          <h1>Comandos CPV / LoRa</h1>
+          <h1>Telemetría CPV / LoRa</h1>
         </div>
 
         <div class="status-strip" aria-label="Estado del sistema">
@@ -32,12 +33,50 @@
         </div>
       </header>
 
-      <p id="telemetryNote" class="telemetry-note" role="status">La estación actual solo transmite comandos. No se espera telemetría ni ACK.</p>
+      <div class="audio-controls" aria-label="Sonidos de la estación">
+        <button id="toggleSound" type="button" aria-pressed="true">Sonido: activado</button>
+        <label for="soundVolume">Volumen</label>
+        <input id="soundVolume" type="range" min="0" max="100" value="60">
+        <button id="testSound" type="button">Probar sonido</button>
+        <span>Alerta al confirmar paracaídas · avisos de preparación y enlace</span>
+      </div>
+
+      <p id="telemetryNote" class="telemetry-note" role="status">Esperando telemetría de la CPV.</p>
+      <section id="preparationPanel" class="panel preparation-panel" aria-label="Preparación para el vuelo">
+        <div class="preparation-heading">
+          <h2>ENCENDER → ARMAR → CALIBRAR</h2>
+          <strong id="preparationState" class="warn" role="status">ESPERANDO CPV</strong>
+        </div>
+        <div class="preparation-grid">
+          <div><span>Mecanismo</span><strong id="armingState">--</strong></div>
+          <div><span>Calibración manual</span><strong id="calibrationState">--</strong></div>
+          <div><span>Detección de despegue</span><strong id="flightWatchState">--</strong></div>
+        </div>
+        <p id="preparationDetail">La CPV mantiene la detección de vuelo independiente de la preparación.</p>
+      </section>
+      <section class="flight-summary" aria-label="Paracaídas y memoria de vuelo">
+        <article id="parachutePanel" class="panel parachute-panel pending" role="status">
+          <strong id="parachuteState">PARACAÍDAS SIN ACTIVAR</strong>
+          <span id="parachuteDetail">Esperando confirmación de la CPV</span>
+        </article>
+        <article class="panel peak-panel">
+          <span>Velocidad máxima |Vz|</span><strong id="maxSpeed">-- m/s</strong>
+          <small>Memoria de vuelo</small>
+        </article>
+        <article class="panel peak-panel">
+          <span>Aceleración máxima |az|</span><strong id="maxAcceleration">-- m/s²</strong>
+          <small>Vertical neta, filtrada</small>
+        </article>
+        <article class="panel peak-panel">
+          <span>Altura máxima</span><strong id="maxAltitude">-- m</strong>
+          <small>Sobre la referencia de despegue</small>
+        </article>
+      </section>
       <section class="dashboard-grid">
         <section class="sensor-column" aria-label="Datos instantaneos">
           <div class="sensor-grid">
             <article class="panel">
-              <h2>=== ORIENTACION (deg) ===</h2>
+              <h2>=== INCLINACIÓN APARENTE (deg) ===</h2>
               <div class="metric-table">
                 <div class="metric-head"><span>EJE</span><span>ANGULO</span></div>
                 <div><span>Roll (X)</span><strong id="rollValue">0.00</strong></div>
@@ -84,6 +123,8 @@
               <div><span>Temp BARO (C)</span><strong id="baroTemp">0.0</strong></div>
               <div><span>Presion (hPa)</span><strong id="pressureValue">0.0</strong></div>
               <div><span>Altitud (m)</span><strong id="altitudeNow">0.0</strong></div>
+              <div><span>Velocidad vertical (m/s)</span><strong id="velocityNow">--</strong></div>
+              <div><span>Acel. vertical (m/s²)</span><strong id="accelerationNow">--</strong></div>
             </div>
           </article>
         </section>
@@ -120,7 +161,10 @@
               <div class="command-help">
                 <p>Comandos hacia CPV:</p>
                 <button type="button" data-command="ARMAR">ARMAR</button>
+                <button type="button" data-command="CALIBRAR">CALIBRAR</button>
                 <button type="button" data-command="ACTIVAR">ACTIVAR</button>
+                <button type="button" data-command="REINICIAR" class="reset-command">Reiniciar CPV</button>
+                <p class="reset-help">Reiniciar borra la calibración, el estado de vuelo y los máximos de la CPV. No cierra el mecanismo.</p>
               </div>
               <div class="command-status">
                 <p><span>&gt;&gt;</span> <strong id="lastCommand">sin comando</strong></p>

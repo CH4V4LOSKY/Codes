@@ -1,6 +1,7 @@
 const BAUD_RATE = 115200;
 const MAX_HISTORY = 180;
 const DEG = 180 / Math.PI;
+const stationSounds = new window.StationSounds();
 
 const els = {
   connectSerial: document.querySelector("#connectSerial"),
@@ -36,7 +37,23 @@ const els = {
   commandInput: document.querySelector("#commandInput"),
   lastCommand: document.querySelector("#lastCommand"),
   commandResult: document.querySelector("#commandResult"),
-  telemetryNote: document.querySelector("#telemetryNote")
+  telemetryNote: document.querySelector("#telemetryNote"),
+  parachutePanel: document.querySelector("#parachutePanel"),
+  parachuteState: document.querySelector("#parachuteState"),
+  parachuteDetail: document.querySelector("#parachuteDetail"),
+  maxSpeed: document.querySelector("#maxSpeed"),
+  maxAcceleration: document.querySelector("#maxAcceleration"),
+  maxAltitude: document.querySelector("#maxAltitude"),
+  velocityNow: document.querySelector("#velocityNow"),
+  accelerationNow: document.querySelector("#accelerationNow"),
+  preparationState: document.querySelector("#preparationState"),
+  armingState: document.querySelector("#armingState"),
+  calibrationState: document.querySelector("#calibrationState"),
+  flightWatchState: document.querySelector("#flightWatchState"),
+  preparationDetail: document.querySelector("#preparationDetail"),
+  toggleSound: document.querySelector("#toggleSound"),
+  soundVolume: document.querySelector("#soundVolume"),
+  testSound: document.querySelector("#testSound")
 };
 
 const state = {
@@ -46,7 +63,10 @@ const state = {
   serialBuffer: "",
   connected: false,
   demoTimer: null,
+  demoData: false,
   demoSample: 0,
+  demoSoundSession: 0,
+  audioLinkLost: false,
   missionStart: null,
   packetsOk: 0,
   packetsLost: 0,
@@ -54,7 +74,16 @@ const state = {
   history: [],
   recentTimestamps: [],
   prettyPacket: null,
-  transmissionReported: false
+  transmissionReported: false,
+  missionKey: null,
+  lastTelemetryAt: null,
+  deployed: false,
+  releaseSource: 0,
+  maxSpeed: NaN,
+  maxAcceleration: NaN,
+  maxAltitude: NaN,
+  commandIdentity: null,
+  preparationPacket: null
 };
 
 function fixed(value, digits = 1, fallback = "--") {
@@ -105,8 +134,39 @@ function splitCsv(line) {
 }
 
 function numberAt(fields, index) {
+  if (fields[index] === undefined || fields[index] === "") return NaN;
   const value = Number(fields[index]);
   return Number.isFinite(value) ? value : NaN;
+}
+
+function parseCpvTelemetry(line) {
+  const f = splitCsv(line);
+  if (f.length !== 24 || f[0] !== "UI_TLM2" || numberAt(f, 23) !== 0x32565043) return null;
+  if (!f.slice(1, 8).every((value) => /^\d+$/.test(value))) return null;
+  const controls = f.slice(1, 8).map(Number);
+  if (!controls.every((n) => Number.isInteger(n) && n >= 0 && n <= 0xffffffff)) return null;
+  const [boot, sample, uptime, flags, source, flightState, epoch] = controls;
+  if (source > 2 || flightState > 2 || flags > 16383) return null;
+  if (Boolean(flags & 16) !== (source > 0)) return null;
+  const imuOk = Boolean(flags & 1), baroOk = Boolean(flags & 2), calibrated = Boolean(flags & 4);
+  const referenceReady = Boolean(flags & (2048 | 4)); // Older firmware used only Calibrated.
+  return {
+    version: 2, boot, sample, uptime, flags, source, flightState, epoch,
+    imuOk, baroOk, calibrated, deployed: Boolean(flags & 16),
+    referenceReady, orientationOk: Boolean(flags & 8), airborne: Boolean(flags & 32) || flightState > 0,
+    closing: Boolean(flags & 128), armed: Boolean(flags & 1024), calibrating: Boolean(flags & 512),
+    calibrationFailed: Boolean(flags & 4096),
+    restarting: Boolean(flags & 8192),
+    accX: imuOk ? numberAt(f, 8) : NaN, accY: imuOk ? numberAt(f, 9) : NaN, accZ: imuOk ? numberAt(f, 10) : NaN,
+    gyroX: imuOk ? numberAt(f, 11) : NaN, gyroY: imuOk ? numberAt(f, 12) : NaN, gyroZ: imuOk ? numberAt(f, 13) : NaN,
+    pressureHpa: baroOk ? numberAt(f, 14) : NaN,
+    altitudeM: baroOk && referenceReady ? numberAt(f, 15) : NaN,
+    verticalSpeed: baroOk && referenceReady ? numberAt(f, 16) : NaN,
+    acceleration: flags & 256 ? numberAt(f, 17) : NaN,
+    maxAltitude: numberAt(f, 18), maxSpeed: numberAt(f, 19), maxAcceleration: numberAt(f, 20),
+    rssi: numberAt(f, 21), snr: numberAt(f, 22),
+    magOk: false, headingDeg: NaN, imuTempC: NaN, baroTempC: NaN
+  };
 }
 
 function parseTlmFields(fields, extra = {}) {
@@ -136,6 +196,7 @@ function parseTlmFields(fields, extra = {}) {
 function parseMachineTelemetry(line) {
   const trimmed = line.trim();
   if (!trimmed) return null;
+  if (trimmed.startsWith("UI_TLM2,")) return parseCpvTelemetry(trimmed);
 
   if (trimmed.startsWith("UI_TLM,")) {
     const fields = splitCsv(trimmed.slice("UI_TLM,".length));
@@ -244,9 +305,9 @@ function normalizePacket(packet) {
   const timestamp = Date.now();
   const previous = state.history.at(-1);
   const dt = previous ? Math.max(0.001, (timestamp - previous.timestamp) / 1000) : NaN;
-  const verticalSpeed = previous && Number.isFinite(packet.altitudeM) && Number.isFinite(previous.altitudeM)
+  const verticalSpeed = packet.version === 2 ? packet.verticalSpeed : previous && Number.isFinite(packet.altitudeM) && Number.isFinite(previous.altitudeM)
     ? (packet.altitudeM - previous.altitudeM) / dt
-    : 0;
+    : NaN;
 
   return {
     ...packet,
@@ -257,10 +318,22 @@ function normalizePacket(packet) {
 }
 
 function recordPacket(packet) {
+  if (packet.version === 2) {
+    const key = `${packet.boot}:${packet.epoch}`;
+    if (state.missionKey !== key) {
+      resetData(true, true);
+      state.missionKey = key;
+      logLine("Referencia de vuelo recibida de la CPV.");
+    } else if (state.lastSample !== null) {
+      const delta = (packet.sample - state.lastSample) >>> 0;
+      if (delta === 0 || delta >= 0x80000000) return; // Duplicate / out-of-order downlink.
+      state.packetsLost += delta - 1;
+    }
+  }
   if (!state.missionStart) state.missionStart = Date.now();
 
   const normalized = normalizePacket(packet);
-  if (Number.isFinite(normalized.sample) && Number.isFinite(state.lastSample) && normalized.sample > state.lastSample + 1) {
+  if (packet.version !== 2 && Number.isFinite(normalized.sample) && Number.isFinite(state.lastSample) && normalized.sample > state.lastSample + 1) {
     state.packetsLost += normalized.sample - state.lastSample - 1;
   }
   if (Number.isFinite(normalized.sample)) {
@@ -268,6 +341,20 @@ function recordPacket(packet) {
   }
 
   state.packetsOk += 1;
+  state.lastTelemetryAt = normalized.timestamp;
+  state.audioLinkLost = false;
+  state.preparationPacket = normalized;
+  renderPreparation(normalized);
+  stationSounds.observe(normalized, { ready: flightReady(normalized), demoSession: state.demoData ? state.demoSoundSession : null });
+  const peak = (old, ...values) => values.filter(Number.isFinite).reduce((a, b) => Number.isFinite(a) ? Math.max(a, b) : b, old);
+  state.maxAltitude = peak(state.maxAltitude, packet.maxAltitude, packet.altitudeM);
+  state.maxSpeed = peak(state.maxSpeed, packet.maxSpeed, Math.abs(normalized.verticalSpeed));
+  state.maxAcceleration = peak(state.maxAcceleration, packet.maxAcceleration, Math.abs(packet.acceleration));
+  if (packet.deployed) {
+    state.deployed = true;
+    state.releaseSource = packet.source;
+  }
+  renderFlightMemory();
   state.history.push(normalized);
   if (state.history.length > MAX_HISTORY) state.history.shift();
 
@@ -278,9 +365,75 @@ function recordPacket(packet) {
   setConnection(state.demoTimer ? "DEMO" : state.connected ? "CONECTADO USB" : "RECIBIENDO", "ok");
   els.telemetryNote.textContent = state.demoTimer
     ? "DEMO: datos simulados. No representan sensores ni recepción LoRa."
-    : "Telemetría recibida. Los comandos se pueden enviar sin esperar nuevas muestras.";
+    : "Telemetría CPV recibida. ARMAR cierra el mecanismo; CALIBRAR inicia el procedimiento manual. La detección de vuelo sigue independiente.";
   renderTelemetry(normalized);
   drawCharts();
+}
+
+function flightReady(packet) {
+  return Boolean(packet && packet.armed && packet.calibrated && packet.imuOk && packet.baroOk && packet.referenceReady && packet.orientationOk &&
+    !packet.deployed && !packet.airborne && !packet.closing && !packet.calibrating && !packet.calibrationFailed && !packet.restarting);
+}
+
+function renderPreparation(packet, stale = false) {
+  let label = "ESPERANDO CPV", tone = "warn";
+  let detail = "La CPV mantiene la detección de vuelo independiente de la preparación.";
+  if (!packet || stale || (packet.version !== 2 && !state.demoData)) {
+    els.armingState.textContent = els.calibrationState.textContent = els.flightWatchState.textContent = "--";
+    if (stale) {
+      label = "SIN TELEMETRÍA RECIENTE";
+      detail = "No se puede confirmar la preparación actual. Se conservan los máximos y la activación recibida.";
+    }
+  } else {
+    els.armingState.textContent = packet.deployed ? "APERTURA ACTIVADA" : packet.closing ? "ARMANDO…" : packet.armed ? "ARMADO" : "PENDIENTE DE ARMAR";
+    els.calibrationState.textContent = packet.calibrating ? "CALIBRANDO…" : packet.calibrationFailed ? "CANCELADA / REINTENTAR" : packet.calibrated ? "COMPLETA" : "SIN SOLICITAR";
+    els.flightWatchState.textContent = packet.airborne ? "VUELO DETECTADO" : packet.baroOk && packet.referenceReady ? "VIGILANDO VUELO" : "SIN PRESIÓN VÁLIDA";
+    if (packet.restarting) {
+      label = "REINICIO CPV PENDIENTE";
+      detail = "La CPV reiniciará tras transmitir la confirmación y terminar el pulso del motor. ACTIVAR conserva prioridad.";
+    } else if (packet.deployed) {
+      label = "PARACAÍDAS ACTIVADO";
+      detail = "La CPV continúa transmitiendo después de la apertura.";
+    } else if (packet.airborne) {
+      label = "EN VUELO"; tone = "ok";
+      detail = "Detección automática activa. ARMAR y CALIBRAR quedan bloqueados durante el vuelo.";
+    } else if (packet.closing) {
+      label = "ARMANDO PARACAÍDAS";
+      detail = "Cierre de 1 s. Al terminar, solicita CALIBRAR con la CPV inmóvil.";
+    } else if (packet.calibrating) {
+      label = "CALIBRACIÓN MANUAL EN CURSO";
+      detail = "Mantén la CPV inmóvil durante ~2 s. Se filtran picos aislados y se comprueba la estabilidad; el límite es 15 s. La detección de despegue sigue activa.";
+    } else if (packet.calibrationFailed) {
+      label = "CALIBRACIÓN NO COMPLETADA";
+      detail = "Revisa reposo y sensores y vuelve a pulsar CALIBRAR. La referencia anterior sigue en uso.";
+    } else if (!packet.baroOk || !packet.referenceReady) {
+      label = "SIN DATOS PARA DETECTAR VUELO"; tone = "bad";
+      detail = "No hay presión válida para actualizar el vuelo. ACTIVAR manual sigue disponible.";
+    } else if (flightReady(packet)) {
+      label = "LISTO PARA VUELO"; tone = "ok";
+      detail = "Armado terminado y calibración manual completa. La CPV detectará el vuelo por sus condiciones de altura y velocidad.";
+    } else {
+      label = "DETECCIÓN ACTIVA · PREPARACIÓN PENDIENTE";
+      detail = !packet.armed ? "Solicita ARMAR y después CALIBRAR. El automático ya vigila con la referencia disponible."
+        : !packet.calibrated ? "Mecanismo armado. Pulsa CALIBRAR cuando la CPV esté inmóvil. El respaldo barométrico ya está activo."
+          : "Calibración registrada, pero falta IMU u orientación válida. Sigue disponible el respaldo barométrico.";
+    }
+    if (state.demoData) { label = `DEMO · ${label}`; detail = `Simulación. ${detail}`; }
+  }
+  els.preparationState.textContent = label;
+  els.preparationState.className = tone;
+  els.preparationDetail.textContent = detail;
+}
+
+function renderFlightMemory() {
+  els.parachutePanel.className = `panel parachute-panel ${state.deployed ? "deployed" : "pending"}`;
+  els.parachuteState.textContent = state.deployed ? "PARACAÍDAS ACTIVADO" : "PARACAÍDAS SIN ACTIVAR";
+  els.parachuteDetail.textContent = state.deployed
+    ? `${state.releaseSource === 1 ? "Automático" : "Manual"} · activación reportada por la CPV${state.demoData ? " (DEMO)" : ""}`
+    : "Esperando confirmación de la CPV";
+  els.maxSpeed.textContent = `${fixed(state.maxSpeed, 2)} m/s`;
+  els.maxAcceleration.textContent = `${fixed(state.maxAcceleration, 2)} m/s²`;
+  els.maxAltitude.textContent = `${fixed(state.maxAltitude, 2)} m`;
 }
 
 function renderTelemetry(packet) {
@@ -310,6 +463,8 @@ function renderTelemetry(packet) {
   els.baroTemp.textContent = fixed(packet.baroTempC, 1);
   els.pressureValue.textContent = fixed(packet.pressureHpa, 1);
   els.altitudeNow.textContent = fixed(packet.altitudeM, 1);
+  els.velocityNow.textContent = fixed(packet.verticalSpeed, 2);
+  els.accelerationNow.textContent = fixed(packet.acceleration, 2);
 }
 
 function handleSerialLine(line) {
@@ -317,6 +472,31 @@ function handleSerialLine(line) {
   if (!trimmed) return;
 
   logLine(trimmed);
+  const status = trimmed.match(/^UI_CMD,(PENDIENTE|TX|ACK|SIN_CONFIRMACION|REINICIADO|SIN_REINICIO|SIN_DESTINO|CANCELADO),(\d+),(\d+),(ARMAR|ACTIVAR|CALIBRAR|REINICIAR),(\d+)$/);
+  if (status) {
+    const [, stage, session, sequence, command, result] = status;
+    const identity = `${session}:${sequence}`;
+    // ACK/TX are paired with the station's pending command, not just its name.
+    if (stage === "PENDIENTE" || stage === "SIN_DESTINO") {
+      state.commandIdentity = identity;
+      els.lastCommand.textContent = command;
+    }
+    if (state.commandIdentity === identity) {
+      state.transmissionReported = true;
+      const messages = {
+        PENDIENTE: "pendiente de confirmación de la CPV; reintentos automáticos",
+        TX: "transmitido por LoRa; esperando confirmación de la CPV",
+        ACK: result === "1" ? command === "CALIBRAR" ? "solicitud aceptada; espera la calibración completa en el panel"
+          : command === "REINICIAR" ? "aceptado; esperando telemetría del nuevo arranque" : "aceptado por la CPV" : "rechazado por la CPV según su estado",
+        SIN_CONFIRMACION: "sin confirmación tras 8 intentos; comprueba la telemetría antes de reintentar",
+        REINICIADO: "CPV reiniciada; nuevo arranque confirmado por telemetría",
+        SIN_REINICIO: "no se confirmó un nuevo arranque en 15 s; revisa la telemetría",
+        SIN_DESTINO: "no enviado; la estación necesita recibir primero telemetría de la CPV",
+        CANCELADO: "reinicio pendiente cancelado por ACTIVAR"
+      };
+      els.commandResult.textContent = `${command}: ${messages[stage]}.`;
+    }
+  }
   const sent = trimmed.match(/^Enviado: (ARMAR|ACTIVAR)$/);
   if (sent && els.lastCommand.textContent === sent[1]) {
     state.transmissionReported = true;
@@ -327,6 +507,7 @@ function handleSerialLine(line) {
 }
 
 async function connectSerial() {
+  void stationSounds.unlock();
   if (state.connected) {
     await disconnectSerial();
     return;
@@ -400,6 +581,7 @@ async function disconnectSerial() {
   state.port = null;
   state.serialBuffer = "";
   setConnection("DESCONECTADO", "warn");
+  renderPreparation(null, true);
   logLine("Puerto serial cerrado.");
 }
 
@@ -428,11 +610,16 @@ function demoPacket() {
     pressureHpa: 1013.25 * Math.pow(1 - altitude / 44330, 5.255),
     altitudeM: altitude,
     rssi: -75 - Math.abs(Math.sin(t / 9) * 18),
-    snr: 8.5 - Math.abs(Math.sin(t / 11) * 4)
+    snr: 8.5 - Math.abs(Math.sin(t / 11) * 4),
+    deployed: t >= 34, source: 1, referenceReady: true,
+    armed: t >= 2 && t < 34, closing: t < 2, calibrating: t >= 3 && t < 5,
+    calibrated: t >= 5, orientationOk: t >= 5, airborne: t >= 7,
+    acceleration: t < 32 ? 0.4 * Math.cos(t / 8) : -1.44
   };
 }
 
 async function startDemo() {
+  void stationSounds.unlock();
   if (state.demoTimer) {
     stopDemo();
     return;
@@ -440,6 +627,8 @@ async function startDemo() {
   if (state.connected) await disconnectSerial();
   resetData();
   state.demoSample = 0;
+  state.demoSoundSession += 1;
+  state.demoData = true;
   state.missionStart = Date.now();
   state.demoTimer = window.setInterval(() => {
     const packet = demoPacket();
@@ -459,10 +648,19 @@ function stopDemo() {
   els.demoMode.classList.remove("active");
   if (!state.connected) setConnection("ESPERANDO", "warn");
   logLine("Modo demo detenido.");
-  els.telemetryNote.textContent = "Demo detenida: cualquier dato conservado es simulado. La estación actual no recibe telemetría.";
+  els.telemetryNote.textContent = "Demo detenida: los datos conservados son simulados.";
 }
 
-function resetData() {
+function resetData(resetFlight = true, preserveCommand = false) {
+  if (resetFlight) {
+    state.demoData = false;
+    state.missionKey = null;
+    state.deployed = false;
+    state.releaseSource = 0;
+    state.maxSpeed = state.maxAcceleration = state.maxAltitude = NaN;
+    state.lastTelemetryAt = null;
+    state.preparationPacket = null;
+  }
   state.packetsOk = 0;
   state.packetsLost = 0;
   state.lastSample = null;
@@ -470,10 +668,13 @@ function resetData() {
   state.recentTimestamps = [];
   state.prettyPacket = null;
   state.missionStart = null;
-  state.transmissionReported = false;
-  els.lastCommand.textContent = "sin comando";
-  els.commandResult.textContent = "Sin envío. ARMAR y ACTIVAR no requieren telemetría ni ACK.";
-  els.telemetryNote.textContent = "La estación actual solo transmite comandos: no se espera telemetría ni ACK. Los comandos funcionan aunque las gráficas estén vacías.";
+  if (!preserveCommand) {
+    state.transmissionReported = false;
+    state.commandIdentity = null;
+    els.lastCommand.textContent = "sin comando";
+    els.commandResult.textContent = "Sin envío. Conecta la estación terrena por USB.";
+  }
+  els.telemetryNote.textContent = "Esperando telemetría CPV. Secuencia de preparación: ARMAR → CALIBRAR. ACTIVAR manual siempre disponible por radio.";
   els.serialLog.replaceChildren();
   renderTelemetry({
     sample: NaN,
@@ -494,15 +695,18 @@ function resetData() {
     rssi: NaN,
     snr: NaN
   });
+  renderFlightMemory();
+  renderPreparation(state.preparationPacket, Boolean(state.preparationPacket) &&
+    ((!state.connected && !state.demoData) || Date.now() - state.lastTelemetryAt > 2000));
   drawCharts();
 }
 
 async function sendCommand(command) {
   const clean = command.trim().toUpperCase();
   if (!clean) return;
-  if (clean !== "ARMAR" && clean !== "ACTIVAR") {
-    els.commandResult.textContent = "Comando no enviado: utiliza ARMAR o ACTIVAR.";
-    logLine("La estación solo acepta ARMAR y ACTIVAR.");
+  if (!["ARMAR", "ACTIVAR", "CALIBRAR", "REINICIAR"].includes(clean)) {
+    els.commandResult.textContent = "Comando no enviado: utiliza ARMAR, CALIBRAR, ACTIVAR o REINICIAR.";
+    logLine("La estación acepta ARMAR, CALIBRAR, ACTIVAR y REINICIAR.");
     return;
   }
   if (!state.connected || !state.writer || state.demoTimer) {
@@ -510,7 +714,9 @@ async function sendCommand(command) {
     logLine("No hay conexión USB activa para enviar comandos.");
     return;
   }
+  void stationSounds.unlock();
   els.lastCommand.textContent = clean;
+  state.commandIdentity = null;
   state.transmissionReported = false;
   els.commandResult.textContent = `${clean}: enviando por USB…`;
   logLine(`>> ${clean}`);
@@ -549,7 +755,7 @@ function exportCsv() {
     "altitudeM",
     "verticalSpeed",
     "rssi",
-    "snr"
+    "snr", "acceleration", "deployed", "source", "maxAltitude", "maxSpeed", "maxAcceleration", "boot", "epoch", "uptime"
   ];
   const rows = state.history.map((packet) => [
     new Date(packet.timestamp).toISOString(),
@@ -568,7 +774,8 @@ function exportCsv() {
     packet.altitudeM,
     packet.verticalSpeed,
     packet.rssi,
-    packet.snr
+    packet.snr, packet.acceleration, packet.deployed, packet.source,
+    packet.maxAltitude, packet.maxSpeed, packet.maxAcceleration, packet.boot, packet.epoch, packet.uptime
   ].join(","));
 
   const blob = new Blob([[header.join(","), ...rows].join("\n")], { type: "text/csv" });
@@ -714,11 +921,24 @@ window.addEventListener("resize", drawCharts);
 els.connectSerial.addEventListener("click", connectSerial);
 els.demoMode.addEventListener("click", startDemo);
 els.clearData.addEventListener("click", () => {
+  const demoData = state.demoData;
   stopDemo();
-  resetData();
+  resetData(demoData);
   setConnection(state.connected ? "CONECTADO" : "ESPERANDO", state.connected ? "ok" : "warn");
 });
 els.exportCsv.addEventListener("click", exportCsv);
+els.toggleSound.addEventListener("click", () => {
+  stationSounds.setEnabled(!stationSounds.enabled);
+  els.toggleSound.textContent = stationSounds.enabled ? "Sonido: activado" : "Sonido: silenciado";
+  els.toggleSound.setAttribute("aria-pressed", String(stationSounds.enabled));
+  if (stationSounds.enabled) void stationSounds.unlock();
+});
+els.soundVolume.addEventListener("input", () => stationSounds.setVolume(Number(els.soundVolume.value) / 100));
+els.testSound.addEventListener("click", async () => {
+  if (!stationSounds.enabled) { logLine("Activa el sonido antes de probarlo."); return; }
+  if (await stationSounds.unlock()) stationSounds.play("test");
+  else logLine("No se pudo habilitar audio en el navegador; la telemetría y los comandos siguen disponibles.");
+});
 
 document.querySelectorAll("[data-command]").forEach((button) => {
   button.addEventListener("click", () => sendCommand(button.dataset.command));
@@ -732,6 +952,15 @@ els.commandForm.addEventListener("submit", (event) => {
 
 window.setInterval(() => {
   els.missionTime.textContent = elapsedTime();
+  if (state.connected && !state.demoTimer && state.lastTelemetryAt && Date.now() - state.lastTelemetryAt > 2000) {
+    setConnection("USB · SIN TELEMETRÍA", "warn");
+    els.telemetryNote.textContent = "Sin telemetría reciente de la CPV. Se conservan el último estado del paracaídas y los máximos recibidos.";
+    renderPreparation(null, true);
+    if (!state.audioLinkLost) {
+      state.audioLinkLost = true;
+      stationSounds.play("warning");
+    }
+  }
 }, 500);
 
 resetData();

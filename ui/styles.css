@@ -22,6 +22,30 @@
   line-height: 1.5;
 }
 #commandResult { line-height: 1.5; color: var(--amber); }
+.audio-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.audio-controls button { padding: 0 12px; }
+.audio-controls span { color: var(--muted); font-size: .85rem; }
+.audio-controls input { max-width: 150px; accent-color: var(--green); }
+.reset-command { border-color: var(--amber); color: var(--amber); }
+.command-help .reset-help { color: var(--muted); font-size: .8rem; line-height: 1.5; margin-top: 6px; }
+.preparation-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.preparation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.preparation-grid div { display: grid; gap: 6px; }
+.preparation-grid span, #preparationDetail { color: var(--muted); }
+#preparationDetail { margin-bottom: 0; line-height: 1.5; }
+
+.flight-summary {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1.5fr) repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.parachute-panel, .peak-panel { display: grid; align-content: center; gap: 9px; }
+.parachute-panel.pending { border: 2px solid var(--red); background: #261012; color: var(--red); }
+.parachute-panel.deployed { border: 2px solid var(--green); background: #0c2915; color: var(--green); }
+.parachute-panel strong { font-size: 1.15rem; }
+.parachute-panel span, .peak-panel small { font-size: .8rem; line-height: 1.5; }
+.peak-panel span, .peak-panel small { color: var(--muted); }
+.peak-panel strong { color: var(--blue); font-size: 1.6rem; }
 
 * {
   box-sizing: border-box;
@@ -361,6 +385,7 @@ canvas {
 }
 
 @media (max-width: 1120px) {
+  .flight-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .topbar,
   .dashboard-grid,
   .bottom-grid {
@@ -377,6 +402,8 @@ canvas {
 }
 
 @media (max-width: 720px) {
+  .preparation-grid { grid-template-columns: 1fr; }
+  .flight-summary { grid-template-columns: 1fr; }
   .telemetry-shell {
     padding: 9px;
   }

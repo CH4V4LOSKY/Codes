@@ -1,63 +1,69 @@
-# UI de comandos de la estación terrena
+# UI de telemetría y comandos CPV
 
-La UI se conecta por USB al ESP32 con `Proyecto_HC2026_RW/EstacionTerrena_LoRa_Lib/EstacionTerrena_LoRa_Lib.ino`. La estación actual **solo transmite comandos por LoRa**: no recibe telemetría ni confirmaciones. Las gráficas vacías y los indicadores `--` son normales. Los botones no esperan muestras ni ACK.
+Usar la nueva estación `Proyecto_HC2026_RW/CPV_Paracaidas_LoRa_RX/EstacionTerrena/EstacionTerrena.ino`, conectada por USB a 115200 baudios. Cargar el sketch principal de esa carpeta en la CPV.
 
-## Uso
-
-Desde la carpeta `Codes`:
+Desde `Codes`:
 
 ```powershell
 node ui/server.mjs
 ```
 
-Abrir **http://127.0.0.1:4173** en Chrome o Edge. Mantener el servidor abierto. Pulsar Conectar y elegir el puerto USB de la estación, a 115200 baudios. Cerrar otros monitores seriales que utilicen ese puerto. Este panel es distinto de `SIM` en el puerto 4174, que se conecta directamente al firmware de simulación de la CPV.
+Abrir http://127.0.0.1:4173 en Chrome o Edge, pulsar **Conectar** y seleccionar el USB de la estación. Cerrar otros monitores seriales de ese puerto.
 
-| Botón o entrada | Bytes USB a la estación | Paquete LoRa | Acción en Freddy |
-|---|---|---|---|
-| ARMAR | `ARMAR` + nueva línea | `ARMAR` | Servo a 0° |
-| ACTIVAR | `ACTIVAR` + nueva línea | `ACTIVAR` | Servo a 90° |
+## Pantalla
 
-El campo de texto elimina espacios exteriores y convierte a mayúsculas. Solo admite ARMAR y ACTIVAR; no envía órdenes desconocidas ni varias órdenes dentro de una misma entrada. No hay reenvío automático. Se puede enviar de nuevo manualmente si es necesario.
+- Secuencia **ENCENDER → ARMAR → CALIBRAR**. ARMAR solo cierra durante 1 s; esperar **ARMADO** y pulsar **CALIBRAR** con la CPV inmóvil durante ~2 s (100 muestras filtradas y estables). Se eliminan picos aislados y se evalúa la dispersión para tolerar el ruido y el sesgo que se está calibrando. La calibración solo empieza por esta orden, no por encender ni armar.
+- **LISTO PARA VUELO** requiere armado terminado, calibración manual completa, IMU/barómetro/orientación válidos y telemetría reciente. Un ACK confirma la solicitud; no confirma el fin del cierre ni de la calibración.
+- La detección automática permanece activa con la primera referencia de presión aunque falten pasos de preparación. Sin calibración manual funciona el respaldo barométrico; la calibración añade la referencia promediada y la orientación para la predicción inercial.
+- Si comienza el vuelo durante la calibración, esta se cancela sin reiniciar el vuelo. Si en 15 s no consigue reposo y lecturas válidas, muestra **CALIBRACIÓN NO COMPLETADA** y requiere volver a pulsar CALIBRAR. Nunca reintenta la medición por sí sola.
 
-## Qué confirma la pantalla
+- **Paracaídas rojo:** aún no hay confirmación de activación. **Verde:** la CPV reportó su orden de apertura, automática o manual. El clic de ACTIVAR y la transmisión USB no cambian por sí solos el color. No hay sensor de posición física.
+- Recuadros de **velocidad máxima |Vz|**, **aceleración máxima |az|** y **altura máxima**. Llegan acumulados desde la CPV, incluso si se perdieron paquetes o se reconecta la UI.
+- Velocidad vertical y aceleración neta filtrada corresponden a la estimación de la CPV. La aceleración máxima excluye datos inválidos/saturados; las unidades están en pantalla.
+- Sensores sin datos se muestran como `--`. La versión actual no transmite temperatura ni rumbo; esos campos permanecen vacíos.
+- Después de 2 s sin telemetría, se indica pérdida de actualización y se conservan los últimos máximos y el estado del paracaídas.
+- **Limpiar** vacía gráficas/registro y contadores de recepción, pero conserva máximos y activación. Los máximos se reinician al reiniciar la CPV o al **completar** una calibración manual antes del vuelo. ARMAR o una calibración fallida no los borran. No son persistentes al apagarla.
+- **CSV** exporta las últimas 180 muestras de las gráficas, incluidos máximos, activación y origen. La memoria de máximos no depende de ese límite.
+- **Demo** muestra datos simulados, incluyendo cambio a verde por activación automática a los ~34 s. En Demo no se transmiten órdenes.
 
-- **Enviado por USB:** terminó la escritura al puerto de la estación; aún no confirma transmisión de radio ni actuación.
-- **La estación informó transmisión LoRa:** se recibió su mensaje `Enviado: ARMAR` o `Enviado: ACTIVAR`. No confirma recepción del receptor ni posición del mecanismo.
-- Sin puerto conectado o durante Demo, la UI indica que el comando no fue enviado.
-- Los valores de sensores empiezan en `--`. Demo muestra datos sintéticos explícitamente marcados; al conectar una estación se borran los valores anteriores de Demo.
+## Reiniciar y sonidos
 
-## Compatibilidad con Freddy
+- **Reiniciar CPV** reinicia el ESP32 de la CPV por LoRa. Borra su calibración, estado de vuelo y máximos; la UI vuelve al estado inicial al recibir el nuevo arranque. No cierra físicamente el paracaídas: después se vuelve a ARMAR y CALIBRAR.
+- La estación debe haber recibido telemetría para dirigir el reinicio al arranque actual. Los reintentos viejos no provocan otro reset después de arrancar. El reinicio espera que termine cualquier pulso del motor; una apertura manual o automática nueva cancela un reinicio pendiente.
+- La UI distingue **reinicio aceptado**, **nuevo arranque confirmado** y **sin confirmación de nuevo arranque en 15 s**. Pulsar el botón o recibir el ACK no borra la pantalla por anticipado.
+- **Sonido: activado/silenciado**, control de **Volumen** y **Probar sonido** funcionan de manera independiente de la conexión. Sonidos por los altavoces de la computadora; no se añadió un buzzer físico.
+- **Probar sonido** reproduce la misma alarma que la confirmación del paracaídas: tres ráfagas de zumbido grave pulsante y tonos agudos alternados, de unos cuatro segundos. Es una síntesis original inspirada en alarmas de cabina. La prueba no envía comandos ni cambia el estado mostrado.
+- El aviso automático de **paracaídas activado** suena únicamente al recibir esa confirmación por telemetría, automática o manual. Se emite una vez por arranque, incluso si los paquetes repiten el estado, se limpia la gráfica o se reconecta el USB en esta misma página. No suena por pulsar ACTIVAR ni por recibir solamente el ACK del comando.
+- También hay avisos de armado terminado, calibración/preparación completa, nuevo arranque y pérdida de telemetría (una vez por interrupción). La alerta de paracaídas tiene prioridad sobre otros tonos. Demo usa sus propios eventos simulados.
+- El navegador necesita una interacción para habilitar audio: Conectar, Demo, un botón de comando o Probar sonido. Silenciar/volumen cero no afecta las órdenes. Si el navegador no permite audio, telemetría y comandos siguen funcionando.
+- `sounds.js` contiene el audio separado de `app.js`; genera tonos locales, sin descargar archivos ni depender de Internet.
 
-Archivo verificado sin modificar: `Proyecto_HC2026_RS/code_Fredy/code_Fredy.ino`.
+## Protocolo de comandos
 
-- La placa del código actual de Freddy es **Arduino Nano clásico ATmega328P**, no ESP32.
-- Bibliotecas: **Servo** y **LoRa** (Sandeep Mistry).
-- Servo en **D5**, orden inicial de 0° al encender.
-- LoRa Nano: SCK D13, MISO D12, MOSI D11, NSS D10, RESET D9, DIO0 D2.
-- LoRa estación ESP32: SCK 18, MISO 19, MOSI 23, NSS 5, RESET 14, DIO0 2.
-- Ambos coinciden: 433 MHz, SF7, ancho de banda 125 kHz, CR4/5, sync word 0x12, preámbulo 8, CRC deshabilitado e IQ normal. La biblioteca usa cabecera explícita por defecto.
-- No se utiliza `CMD:<seq>:<comando>` ni `ACK:<seq>:<comando>`. Freddy acepta únicamente los paquetes directos ARMAR y ACTIVAR.
+UI → USB → estación → LoRa → CPV → telemetría de confirmación → estación → UI.
 
-La CPV nueva `Proyecto_HC2026_RW/CPV_Paracaidas_LoRa_RX` también acepta esas órdenes. Sus salidas controlan el motor, mientras Freddy controla un servo. No hay dirección de destinatario: si ambos receptores están encendidos y dentro de alcance con esta misma configuración, ambos pueden actuar ante la misma orden.
+| Comando | Acción |
+|---|---|
+| ARMAR | Solo cierre de 1 s; no reinicia referencia ni calibra. |
+| CALIBRAR | Medición manual en reposo; no acciona el motor ni detiene la detección de vuelo. |
+| ACTIVAR | Apertura prioritaria de 5 s; funciona sin calibración o telemetría recibida. |
+| REINICIAR | Reinicio del ESP32 de la CPV y regreso a su estado lógico inicial; exige un arranque destinatario conocido. |
 
-## Verificación realizada
+La UI envía `ARMAR\n`, `CALIBRAR\n`, `ACTIVAR\n` o `REINICIAR\n`. La estación agrega sesión, secuencia y arranque destinatario para reinicio, repite hasta 8 intentos y espera un ACK dentro de la telemetría. Las retransmisiones de la misma intención no repiten el motor ni reinician la calibración. Un nuevo ACTIVAR después de finalizar la orden anterior es un reintento manual deliberado. Esperar que termine ARMAR antes de solicitar CALIBRAR. ACTIVAR tiene prioridad sobre preparación y reinicio; la preparación se rechaza durante el vuelo o después de abrir.
 
-- La estación compiló para ESP32 (core 3.3.7, LoRa 0.8.0).
-- Freddy compiló para Nano ATmega328P (core AVR 1.8.7, Servo 1.3.0, LoRa 0.8.0), usando la biblioteca Servo ya instalada.
-- Prueba de la UI con puerto simulado: bytes exactos ARMAR + LF / ACTIVAR + LF, envío sin telemetría/ACK, normalización, entradas inválidas, error USB y mensajes de transmisión.
-- Prueba C++ que incluye ambos sketches originales sin cambios, sustituye solo Serial/LoRa/Servo y ejecuta sus funciones: bytes generados por la UI → estación → paquetes ARMAR/ACTIVAR → órdenes de servo 0°/90°. También verifica parámetros coincidentes y fin de línea CRLF sin envío duplicado.
-- Revisión visual de la UI: botones presentes, sensores sin datos y aviso correcto al intentar enviar sin conexión.
-- **No se realizó una prueba física de radio ni movimiento de servo/motor.** Los sustitutos de prueba verifican el protocolo y las llamadas del código, no la propagación RF ni el hardware.
+No cambiar de verde a rojo por desconectar el USB o por perder un paquete. Un reinicio de la CPV o una nueva referencia de calibración inician una nueva memoria.
 
-Para repetir las pruebas en PC con Node.js y Visual Studio Community 2022:
+## Compatibilidad y pruebas
+
+Para CALIBRAR hay que actualizar **el firmware de la CPV, el de la estación y recargar esta UI**. La primera referencia barométrica se muestra aun sin calibración manual. Al desconectar o perder telemetría, se retira LISTO PARA VUELO; se conservan los máximos y el estado de apertura.
+
+Se conserva la lectura de las tramas antiguas `UI_TLM,TLM,...` y de los mensajes `Enviado: ...`; esos formatos no confirman el estado del paracaídas. La estación vieja de `EstacionTerrena_LoRa_Lib` solo transmite comandos y no ofrece estas funciones nuevas. La estación nueva usa CPV2/CMD2 y está destinada a la CPV de esta carpeta.
 
 ```powershell
+Proyecto_HC2026_RW/CPV_Paracaidas_LoRa_RX/tests/run.cmd
 ui/tests/run.cmd
 ```
 
-Hashes SHA256 antes/después, iguales:
+Pruebas: bytes exactos, comandos sin telemetría, errores USB, Demo, identificación de ACK, rojo/verde automático/manual, máximos que sobreviven a la ventana de gráficas, sensores ausentes, reinicio y duplicados. Se conserva la prueba de compatibilidad de la UI con los sketches antiguos.
 
-- Estación: `C8561C68F30FC02D8FB948C6246805F2E66EA3DAE0887B6BC2CA127CA78A02E8`
-- Freddy: `106D52E94C4AA6A5E2E62C0BB9EE1B861F405FBC7CD9358B1898AAD98BFB696A`
-
-Los parsers antiguos de telemetría se conservan para Demo o un emisor compatible; no se usan como requisito para enviar órdenes con la estación actual.
+No se realizó una prueba física de enlace ni de apertura. Detalles de pines, radio y protocolo: `Proyecto_HC2026_RW/CPV_Paracaidas_LoRa_RX/README.md`.

@@ -2,6 +2,9 @@
 #include <stdint.h>
 // Compile-only I2C substitute. All reads fail; never represents real hardware.
 struct TestWire {
+  void begin(int,int){}
+  void setClock(unsigned){}
+  void setTimeOut(unsigned){}
   void beginTransmission(uint8_t){}
   void write(uint8_t){}
   int endTransmission(bool=true){return 1;}
